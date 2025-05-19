@@ -1,0 +1,10 @@
+./venv
+./git
+**/__pycache__
+/models
+/data
+/catboost_info
+/_old
+/results
+
+MySecrets.py
