@@ -1,5 +1,5 @@
-./venv
-./git
+/.venv
+/.git
 **/__pycache__
 /models
 /data
