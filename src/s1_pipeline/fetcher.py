@@ -1,6 +1,6 @@
 import time, logging, requests
 from tqdm import tqdm
-import config
+from . import config
 
 def fetch_all_threats(session, url, headers, since_iso, verdicts):
     params = {

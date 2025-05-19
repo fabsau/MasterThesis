@@ -8,7 +8,12 @@ from tqdm import tqdm
 
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+src_path = os.path.join(proj_root, "src")
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
+if proj_root not in sys.path:
+    sys.path.insert(0, proj_root)
 from s1_pipeline import config, utils, fetcher
 import MySecrets
 
@@ -79,44 +84,45 @@ def main():
     note_bar.close()
 
     # 4) Deep Visibility
-    since_dt = datetime.now(timezone.utc) - timedelta(days=args.since_days)
-    to_dt    = datetime.now(timezone.utc)
-    log.info("Querying DeepVis from %s to %s …", since_dt, to_dt)
-    try:
-        dv_qid = fetcher.init_deepvis_query(
-            session, dv_init, headers, since_dt, to_dt)
-    except Exception as e:
-        log.error("Failed to init-query DeepVis: %s", e)
-        dv_qid = None
+    # since_dt = datetime.now(timezone.utc) - timedelta(days=args.since_days)
+    # to_dt    = datetime.now(timezone.utc)
+    # log.info("Querying DeepVis from %s to %s …", since_dt, to_dt)
+    # try:
+    #     dv_qid = fetcher.init_deepvis_query(
+    #         session, dv_init, headers, since_dt, to_dt)
+    # except Exception as e:
+    #     log.error("Failed to init-query DeepVis: %s", e)
+    #     dv_qid = None
 
-    dv_events_all = []
-    if dv_qid:
-        cursor   = None
-        dv_bar   = tqdm(desc="DV pages", unit="page", ncols=80)
-        while True:
-            params = {"queryId": dv_qid, "limit": config.PAGE_LIMIT}
-            if cursor:
-                params["cursor"] = cursor
-            resp = session.get(dv_events, headers=headers,
-                               params=params,
-                               timeout=config.DV_TIMEOUT,
-                               verify=config.VERIFY_SSL)
-            if resp.status_code == 429:
-                logging.warning("DV/events 429, sleeping 5s")
-                time.sleep(5)
-                continue
-            resp.raise_for_status()
-            js = resp.json()
-            dv_events_all.extend(js.get("data", []))
-            dv_bar.update(1)
-            cursor = js.get("pagination", {}).get("nextCursor")
-            if not cursor:
-                break
-        dv_bar.close()
+    # dv_events_all = []
+    # if dv_qid:
+    #     cursor   = None
+    #     dv_bar   = tqdm(desc="DV pages", unit="page", ncols=80)
+    #     while True:
+    #         params = {"queryId": dv_qid, "limit": config.PAGE_LIMIT}
+    #         if cursor:
+    #             params["cursor"] = cursor
+    #         resp = session.get(dv_events, headers=headers,
+    #                            params=params,
+    #                            timeout=config.DV_TIMEOUT,
+    #                            verify=config.VERIFY_SSL)
+    #         if resp.status_code == 429:
+    #             logging.warning("DV/events 429, sleeping 5s")
+    #             time.sleep(5)
+    #             continue
+    #         resp.raise_for_status()
+    #         js = resp.json()
+    #         dv_events_all.extend(js.get("data", []))
+    #         dv_bar.update(1)
+    #         cursor = js.get("pagination", {}).get("nextCursor")
+    #         if not cursor:
+    #             break
+    #     dv_bar.close()
 
-    log.info("Fetched %d DeepVis events", len(dv_events_all))
+    # log.info("Fetched %d DeepVis events", len(dv_events_all))
 
     # 5) Attach events to threats
+    dv_events_all = []
     dv_map = {}
     for e in dv_events_all:
         pg = e.get("processGroupId")
@@ -128,6 +134,9 @@ def main():
 
     # 6) Write out
     log.info("Writing %d records → %s", len(all_threats), args.output)
+    out_dir = os.path.dirname(args.output)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     with open(args.output, "w", encoding="utf-8") as fd:
         json.dump({
             "exported_at": datetime.now(timezone.utc)

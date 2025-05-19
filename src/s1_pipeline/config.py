@@ -3,30 +3,23 @@ import os, logging
 # ── General ───────────────────────────────────────────────────────────────────
 LOG_LEVEL = logging.INFO
 
-# ── SentinelOne export ───────────────────────────────────────────────────────
+# ── SentinelOne Export ───────────────────────────────────────────────────────
 VERIFY_SSL         = True
 PAGE_LIMIT         = 1000
 NOTE_PAGE          = 1000
 MAX_WORKERS        = 50
 DV_TIMEOUT         = 15
 MAX_INIT_RETRY     = 5
-LOOKBACK_DAYS      = 1
-OUTPUT_FILE        = "./data/raw_with_deepvis.json"
+LOOKBACK_DAYS      = 30
+OUTPUT_FILE        = "./data/raw.json"
 IGNORE_FIELDS      = []
 IGNORE_NESTED_FIELDS = []
-
-# ── CatBoost ─────────────────────────────────────────────────────────────────
-DEFAULT_TRAIN_JSON   = "./data/train.json"
-DEFAULT_TEST_JSON    = "./data/test.json"
-DEFAULT_MODEL_OUT    = "./models/s1_fp_detector.cbm"
-DEFAULT_RESULTS_DIR  = "./results"
-DEFAULT_THREADS      = max(1, os.cpu_count() - 1)
 
 # ── SplitTrainingData ────────────────────────────────────────────────────────
 INPUT_FILE      = "./data/raw.json"
 OUT_DIR         = "./data/splits"
 TEST_SIZE       = 0.2
-CUTOFF_DATE     = "2025-02-01"
+CUTOFF_DATE     = "2025-05-01"
 METHODS         = ["random","group","time","temporal-group"]
 SEED            = 42
 MAX_THREATS     = None
@@ -39,6 +32,13 @@ GROUP_FIELDS    = [
 ]
 ID_FIELD        = "id"
 ISO_FORMAT      = "%Y-%m-%dT%H:%M:%SZ"
+
+# ── CatBoost ─────────────────────────────────────────────────────────────────
+DEFAULT_TRAIN_JSON   = "./data/train.json"
+DEFAULT_TEST_JSON    = "./data/test.json"
+DEFAULT_MODEL_OUT    = "./models/s1_fp_detector.cbm"
+DEFAULT_RESULTS_DIR  = "./results"
+DEFAULT_THREADS      = max(1, os.cpu_count() - 1)
 
 # ── Inference ─────────────────────────────────────────────────────────────────
 MODEL_PATH_DEFAULT      = DEFAULT_MODEL_OUT
