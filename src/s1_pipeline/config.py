@@ -62,7 +62,7 @@ WHITELIST_FIELDS = [
     "threatInfo.sha256",
     "threatInfo.md5",
     "deepVisibilityEvents",
-    "indicators"
+    "indicators",
     "notes",
 ]
 
