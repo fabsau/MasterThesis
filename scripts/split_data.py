@@ -96,8 +96,29 @@ def main():
         log.info("Method %s → train: %d, test: %d",
                  method, len(train_final), len(te))
 
-        utils.write_dataset(train_final, exported_at, train_path)
-        utils.write_dataset(te,          exported_at, test_path)
+        # write train with metadata
+        os.makedirs(os.path.dirname(train_path), exist_ok=True)
+        with open(train_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "metadata": {
+                    "exported_at": exported_at,
+                    "split_method": method,
+                    "num_threats": len(train_final)
+                },
+                "threats": train_final
+            }, f, indent=2)
+
+        # write test with metadata
+        os.makedirs(os.path.dirname(test_path), exist_ok=True)
+        with open(test_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "metadata": {
+                    "exported_at": exported_at,
+                    "split_method": method,
+                    "num_threats": len(te)
+                },
+                "threats": te
+            }, f, indent=2)
 
     log.info("All splits complete.")
 

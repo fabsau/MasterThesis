@@ -1,4 +1,4 @@
-# utils.py
+# ./src/utils.py
 
 import os
 import json
@@ -9,6 +9,7 @@ import numpy as np
 from datetime import datetime, timezone
 from collections import defaultdict
 from sklearn.preprocessing import OneHotEncoder
+from . import config
 
 def setup_logging(level):
     logging.basicConfig(
@@ -142,6 +143,30 @@ def get_by_path(d, path):
     for k in keys:
         d = d.get(k, {})
     return d
+
+def filter_by_whitelist(obj, whitelist):
+    """
+    Return a new dict containing only the nested keys in whitelist,
+    e.g. "threatInfo.sha1" → {'threatInfo': {'sha1': ...}}
+    """
+    out = {}
+    for path in whitelist:
+        val = get_by_path(obj, path)
+        if val is not None:
+            keys = path.split(".")
+            d = out
+            for k in keys[:-1]:
+                d = d.setdefault(k, {})
+            d[keys[-1]] = val
+    return out
+
+def get_column_clause():
+    # Use string or join list
+    cols = config.DV_COLUMNS if isinstance(config.DV_COLUMNS, str) else ", ".join(config.DV_COLUMNS)
+    clause = f"| columns {cols}"
+    if hasattr(config, 'DV_SORT') and config.DV_SORT:
+        clause += f" | sort {config.DV_SORT}"
+    return clause
 
 def write_dataset(threats, exported_at, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
