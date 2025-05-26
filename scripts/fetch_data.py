@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scripts/fetch_data.py
 import json, argparse, requests, logging, time
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,6 +26,9 @@ def main():
     p.add_argument("--verdicts",   type=str,
                    default="false_positive,true_positive")
     args = p.parse_args()
+
+    # clamp since-days to maximum allowed incident look-back
+    args.since_days = min(args.since_days, config.MAX_INCIDENT_LOOKBACK_DAYS)
 
     # Logging
     level = getattr(logging, args.log_level.upper(), config.LOG_LEVEL) \
@@ -108,11 +112,17 @@ def main():
         created = thinfo.get("createdAt")
         if not created:
             return []
-        # parse time window
+        # parse threat timestamp
         try:
             dt = datetime.strptime(created, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
         except ValueError:
             dt = datetime.strptime(created, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+        # skip deep-vis if threat is older than allowed window
+        if dt < datetime.now(timezone.utc) - timedelta(days=config.MAX_DEEPVIS_LOOKBACK_DAYS):
+            return []
+
+        # parse time window
         from_iso = (dt - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         to_iso   = (dt + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         # build query core
@@ -157,19 +167,41 @@ def main():
 
     # convert raw list‐based deepVisibilityEvents into dicts with titles
     cols = config.DV_COLUMNS if isinstance(config.DV_COLUMNS, list) else config.DV_COLUMNS.split(",")
+    # ensure the sort field is included first
+    if getattr(config, "DV_SORT", None) and config.DV_SORT not in cols:
+        cols.insert(0, config.DV_SORT)
     dv_columns = [c.strip() for c in cols]
     for t in all_threats:
         evts = t.get("deepVisibilityEvents", [])
         if evts and isinstance(evts[0], list):
             t["deepVisibilityEvents"] = [ dict(zip(dv_columns, row)) for row in evts ]
 
+    # drop empty, null, and zero values from deepVisibilityEvents
+    for t in all_threats:
+        cleaned = []
+        for evt in t.get("deepVisibilityEvents", []):
+            filtered = {
+                k: v
+                for k, v in evt.items()
+                if v is not None
+                   and v != ""
+                   and not (isinstance(v, (int, float))
+                            and not isinstance(v, bool)
+                            and v == 0)
+            }
+            cleaned.append(filtered)
+        t["deepVisibilityEvents"] = cleaned
+
     # 5) Write out exactly as before
     log.info("Writing %d records → %s", len(all_threats), args.output)
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
 
     # --- Format deepVisibilityEvents as list of dicts with column names ---
-    dv_columns = config.DV_COLUMNS if isinstance(config.DV_COLUMNS, list) else config.DV_COLUMNS.split(",")
-    dv_columns = [c.strip() for c in dv_columns]
+    cols = config.DV_COLUMNS if isinstance(config.DV_COLUMNS, list) else config.DV_COLUMNS.split(",")
+    # ensure the sort field is included first
+    if getattr(config, "DV_SORT", None) and config.DV_SORT not in cols:
+        cols.insert(0, config.DV_SORT)
+    dv_columns = [c.strip() for c in cols]
 
     def format_deepvis_events(events):
         # If already dicts, return as is

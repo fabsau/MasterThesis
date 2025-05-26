@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scripts/split_data.py
 import os, json, logging, random, argparse
 from datetime import datetime, timezone
 from collections import defaultdict

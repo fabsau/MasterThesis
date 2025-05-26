@@ -1,4 +1,4 @@
-# ./fetcher.py
+# src/s1_pipeline/fetcher.py
 import time, logging, json
 from requests.exceptions import HTTPError
 from tqdm import tqdm

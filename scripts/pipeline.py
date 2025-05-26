@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# scripts/pipeline.py
 import sys, argparse, logging
 from s1_pipeline import config, utils
 import scripts.fetch_data   as fetch_data

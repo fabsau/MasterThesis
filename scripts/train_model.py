@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# scripts/train_model.py
+import os, sys
+# ensure src/ is on PYTHONPATH so s1_pipeline can be imported
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+
 import os, json, logging, argparse, pickle
 from datetime import datetime, timezone
 import pandas as pd, numpy as np
