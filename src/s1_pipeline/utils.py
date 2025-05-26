@@ -1,4 +1,4 @@
-# ./src/utils.py
+# ./src/s1_pipeline/utils.py
 
 import os
 import json
@@ -68,9 +68,14 @@ def group_split(threats, test_size, seed, group_fields):
 
     # shuffle and split clusters
     random.shuffle(group_list)
-    split = int(len(group_list) * (1 - test_size))
-    train = [t for grp in group_list[:split] for t in grp]
-    test  = [t for grp in group_list[split:] for t in grp]
+    split_idx = int(len(group_list) * (1 - test_size))
+    test = [t for grp in group_list[split_idx:] for t in grp]
+    # enforce exact fraction
+    target = int(round(n * test_size))
+    if len(test) > target:
+        random.shuffle(test)
+        test = test[:target]
+    train = [t for t in threats if t not in test]
     return train, test
 
 def time_split(test_size, cutoff_date, time_field, iso_format, threats):
@@ -140,9 +145,12 @@ def temporal_group_split(test_size, cutoff_date, time_field, iso_format, group_f
 
 def get_by_path(d, path):
     keys = path.split(".")
+    current = d
     for k in keys:
-        d = d.get(k, {})
-    return d
+        if not isinstance(current, dict) or k not in current:
+            return None
+        current = current[k]
+    return current
 
 def filter_by_whitelist(obj, whitelist):
     """
@@ -161,10 +169,17 @@ def filter_by_whitelist(obj, whitelist):
     return out
 
 def get_column_clause():
-    # Use string or join list
-    cols = config.DV_COLUMNS if isinstance(config.DV_COLUMNS, str) else ", ".join(config.DV_COLUMNS)
+    # build column list, ensuring the sort field is included
+    if isinstance(config.DV_COLUMNS, list):
+        cols_list = list(config.DV_COLUMNS)
+        if getattr(config, "DV_SORT", None) and config.DV_SORT not in cols_list:
+            cols_list.insert(0, config.DV_SORT)
+        cols = ", ".join(cols_list)
+    else:
+        # when DV_COLUMNS is a raw string
+        cols = config.DV_COLUMNS
     clause = f"| columns {cols}"
-    if hasattr(config, 'DV_SORT') and config.DV_SORT:
+    if getattr(config, "DV_SORT", None):
         clause += f" | sort {config.DV_SORT}"
     return clause
 
