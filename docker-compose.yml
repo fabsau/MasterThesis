@@ -1,0 +1,20 @@
+services:
+    catlyst-postgres:
+        image: postgres:latest
+        container_name: catlyst-postgres
+        hostname: catlyst-postgres
+        restart: unless-stopped
+        security_opt:
+            - no-new-privileges
+        env_file:
+            - ./catlyst-postgres.env
+        networks:
+            - catlyst
+        ports:
+            - "5432:5432"
+        volumes:
+            - ./data/db:/var/lib/postgresql/data
+
+networks:
+    catlyst:
+        driver: bridge
