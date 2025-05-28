@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "Catlyst"
+version = "0.1.0"
+description = "A professional SentinelOne ML pipeline + API"
+authors = ["Fabio Sauna"]
+packages = [{ include = "s1_pipeline", from = "src" }]
+readme = "README.md"
+license = "MIT"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License"
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pandas = "*"
+numpy = "*"
+scikit-learn = "*"
+catboost = "*"
+requests = "*"
+tqdm = "*"
+python-dateutil = "*"
+nltk = "*"
+imbalanced-learn = "*"
+sqlalchemy = "*"
+psycopg2 = "*"
+python-dotenv = "*"
+fastapi = "*"
+
+[tool.poetry.scripts]
+ml-ingest = "s1_pipeline.etl:main"
+ml-train = "s1_pipeline.models.train:main"
+ml-infer = "s1_pipeline.models.infer:main"
+ml-api = "s1_pipeline.api:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

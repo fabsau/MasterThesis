@@ -11,28 +11,39 @@ NOTE_PAGE          = 1000
 MAX_WORKERS        = 200
 DV_TIMEOUT         = 120
 MAX_INIT_RETRY     = 5
-LOOKBACK_DAYS      = 90
+LOOKBACK_DAYS      = 1
 OUTPUT_FILE        = "./data/raw.json"
 IGNORE_FIELDS      = []
 IGNORE_NESTED_FIELDS = []
+
+# ── SentinelOne Secrets (MANDATORY) ─────────────────
+S1_MANAGEMENT_URL = os.getenv("S1_MANAGEMENT_URL")
+S1_API_TOKEN      = os.getenv("S1_API_TOKEN")
+assert S1_MANAGEMENT_URL, "Set S1_MANAGEMENT_URL as env var or in .env"
+assert S1_API_TOKEN,      "Set S1_API_TOKEN as env var or in .env"
+
+# ── Database Secrets (MANDATORY) ─────────────────────
+DB_HOST     = os.getenv("DB_HOST")
+DB_PORT     = int(os.getenv("DB_PORT", 5432))
+DB_NAME     = os.getenv("DB_NAME")
+DB_USER     = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+assert DB_HOST,     "Set DB_HOST as env var or in .env"
+assert DB_NAME,     "Set DB_NAME as env var or in .env"
+assert DB_USER,     "Set DB_USER as env var or in .env"
+assert DB_PASSWORD, "Set DB_PASSWORD as env var or in .env"
+
+# Postgres connection string: use everywhere!
+DB_CONN_STR = (
+    f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+)
 
 # ── Look-back Maximums ───────────────────────────────────────────────────────
 MAX_INCIDENT_LOOKBACK_DAYS = 365
 MAX_DEEPVIS_LOOKBACK_DAYS  = 90
 
-# ── Postgres Database Settings ─────────────────────────────────────────────────
-DB_HOST           = os.getenv("DB_HOST",     "localhost")
-DB_PORT           = int(os.getenv("DB_PORT", 5432))
-DB_NAME           = os.getenv("DB_NAME",     "catlyst")
-DB_USER           = os.getenv("DB_USER",     "catlyst")
-DB_PASSWORD       = os.getenv("DB_PASSWORD", "9KaCMz89d9548xx22xiSB6VT")
-# Use this everywhere
-DB_CONN_STR       = (
-    f"postgresql://{DB_USER}:{DB_PASSWORD}"
-    f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
 # Table names (you can also namespace with a schema if you like)
-DB_TABLE_THREATS  = os.getenv("DB_TABLE_THREATS",  "raw_threats")
+DB_TABLE_THREATS  = os.getenv("DB_TABLE_THREATS",  "catlyst")
 
 # ── SplitTrainingData ────────────────────────────────────────────────────────
 INPUT_FILE      = "./data/raw.json"
