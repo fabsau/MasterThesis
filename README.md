@@ -38,3 +38,8 @@ python scripts/run_inference.py --input-json ./data/splits/random/test.json \
                                 --output      ./results/infer.json
 
 That should eliminate the path warnings, install all required packages, and let you spin up the full pipeline easily.
+
+
+python -c "import nltk; nltk.download('stopwords')"
+pip install poetry
+poetry install

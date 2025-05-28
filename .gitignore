@@ -1,4 +1,3 @@
-/.venv
 /.git
 **/__pycache__
 /models
@@ -7,6 +6,7 @@
 /_old
 /results
 
-MySecrets.py
-Todo.md
+.env
 catlyst-postgres.env
+Todo.md
+poetry.lock

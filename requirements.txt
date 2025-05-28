@@ -1,9 +1,0 @@
-pandas
-numpy
-scikit-learn
-catboost
-requests
-tqdm
-python-dateutil
-nltk
-imbalanced-learn
