@@ -8,7 +8,7 @@ from sklearn.ensemble import IsolationForest
 from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
 from catboost import CatBoostClassifier
 
-from s1_pipeline import config, utils
+from catlyst import config, utils
 
 def main():
     utils.setup_logging(config.LOG_LEVEL)

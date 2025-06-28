@@ -10,11 +10,9 @@ import pandas as pd
 from sklearn.metrics      import roc_auc_score, classification_report
 from catboost             import CatBoostClassifier
 
-import sys, os
 import pickle
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
-from s1_pipeline import config
-from etl   import load_raw_records, featurize
+from catlyst import config
+from scripts.etl_old   import load_raw_records, featurize
 
 def build_test_features(
     test_json: Path,

@@ -1,8 +1,6 @@
 # scipts/train_new.py
-import sys, os
 import pickle
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
-from s1_pipeline import config
+from catlyst import config
 
 import numpy as np
 import pandas as pd
