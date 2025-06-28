@@ -3,6 +3,7 @@ import time
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, Dict, Any, List
+from tqdm import tqdm
 
 import backoff
 import requests
@@ -77,41 +78,37 @@ class SentinelOneAPI:
         return resp
 
     def fetch_all_threats(self,
-                          since_iso: str,
-                          verdicts:  List[str],
-                          show_progress: bool = False
-                         ) -> Iterator[Dict[str,Any]]:
-        from tqdm import tqdm
-
+                        since_iso: str,
+                        verdicts: List[str],
+                        show_progress: bool = False
+                        ) -> Iterator[Dict[str, Any]]:
         url = f"{self.api_prefix}/threats"
         params = {
-            "fromDate": since_iso,
-            "verdicts": ",".join(verdicts),
-            "limit":    self.page_limit,
+            "createdAt__gte": since_iso,
+            "analystVerdicts": ",".join(verdicts),
+            "limit": self.page_limit,
         }
         bar = None
-
         while True:
             resp = self._get(url, params=params)
-            js   = resp.json()
+            js = resp.json()
             data = js.get("data", [])
-
+            pag = js.get("pagination", {}) or {}
+            # initialize progress bar once
             if show_progress and bar is None:
-                total = js.get("pagination", {})\
-                          .get("totalItems", len(data))
+                total = pag.get("totalItems", len(data))
                 bar = tqdm(total=total, desc="threats", unit="thr")
-
+            # yield each threat and advance progress bar
             for t in data:
-                if bar: bar.update(1)
+                if bar:
+                    bar.update(1)
                 yield t
-
-            token = js.get("nextPageToken")
-            if not token:
+            # handle pagination token (v2.1 returns `nextCursor` or sometimes `nextPageToken`)
+            next_token = pag.get("nextCursor") or js.get("nextPageToken")
+            if not next_token:
                 break
-            params["pageToken"] = token
-
-        if bar:
-            bar.close()
+            # Use "cursor" for the next page query param (instead of "pageToken")
+            params["cursor"] = next_token
 
     @backoff.on_exception(
         backoff.expo,
