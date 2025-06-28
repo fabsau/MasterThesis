@@ -1,11 +1,12 @@
 # src/catlyst/settings.py
 
+import catlyst.config
+
 from functools import lru_cache
 from types import SimpleNamespace
-
 from typing import Any, Dict, List, Optional, Tuple
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 
 # ========== 1. DATABASE ==========
 class DatabaseSettings(BaseSettings):
@@ -19,11 +20,7 @@ class DatabaseSettings(BaseSettings):
     def url(self) -> str:
         return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
+    model_config = {"extra": "ignore"}
 
 # ========== 2. SENTINELONE ==========
 class SentinelOneSettings(BaseSettings):
@@ -40,27 +37,28 @@ class SentinelOneSettings(BaseSettings):
     s1_max_incident_lookback_days: int = 365
     s1_max_deepvis_lookback_days: int = 90
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = {"extra": "ignore"}
 
 # ========== 3. ETL / CLI ==========
 class ETLSettings(BaseSettings):
-    log_level: str = "INFO"
+    log_level: str = "DEBUG"
     iso_format: str = "%Y-%m-%dT%H:%M:%SZ"
     since_days: int = 1
     max_since_days: int = 365
     verdicts: List[str] = ["true_positive", "false_positive"]
     no_progress: bool = False
     workers: int = 200
+    db_batch_size: int = 500
     output_file: str = "./data/raw.json"
     ignore_fields: List[str] = []
     ignore_nested_fields: List[str] = []
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = {"extra": "ignore"}
 
 # ========== 4. TABLE ==========
 class TableSettings(BaseSettings):
     db_table_threats: str = "catlyst"
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = {"extra": "ignore"}
 
 # ========== 5. SPLIT ==========
 class SplitSettings(BaseSettings):
@@ -73,11 +71,11 @@ class SplitSettings(BaseSettings):
     max_threats: Optional[int] = None
     time_field: str = "threatInfo.createdAt"
     group_fields: List[str] = [
-        "threatInfo.sha1","threatInfo.sha256","threatInfo.md5","threatInfo.threatId"
+        "threatInfo.sha1", "threatInfo.sha256", "threatInfo.md5", "threatInfo.threatId"
     ]
     id_field: str = "threatInfo.threatId"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = {"extra": "ignore"}
 
 # ========== 6. CATBOOST ==========
 class CatBoostSettings(BaseSettings):
@@ -98,7 +96,7 @@ class CatBoostSettings(BaseSettings):
         "logging_level": "Silent",
     }
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = {"extra": "ignore"}
 
 # ========== 7. INFERENCE ==========
 class InferenceSettings(BaseSettings):
@@ -112,7 +110,7 @@ class InferenceSettings(BaseSettings):
     novelty_threshold: float = 0.0
     prob_threshold: float = 0.5
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = {"extra": "ignore"}
 
 # ========== 8. ADDITIONALS ==========
 class WhitelistSettings(BaseSettings):
@@ -129,54 +127,53 @@ class WhitelistSettings(BaseSettings):
         "indicators",
         "notes",
     ]
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = {"extra": "ignore"}
 
 class DeepVisSettings(BaseSettings):
-    columns: List[str] = ["event.type","event.category","severity"]
+    columns: List[str] = ["event.type", "event.category", "severity"]
     sort: str = "event.time"
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = {"extra": "ignore"}
 
 class FeatureSettings(BaseSettings):
     raw_json_path: str = "./data/splits/temporal-group/train.json"
     features_output_csv: str = "./data/staging/features.csv"
-    etl_top_level_fields: List[str] = ["threatInfo","deepVisibilityEvents","indicators","notes"]
+    etl_top_level_fields: List[str] = ["threatInfo", "deepVisibilityEvents", "indicators", "notes"]
     etl_proc_numeric: List[str] = []
     etl_notes_max_len: int = 5000
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = {"extra": "ignore"}
 
 class TFIDFSettings(BaseSettings):
     max_features: int = 500
-    ngram_range: Tuple[int,int] = (1,2)
+    ngram_range: Tuple[int, int] = (1, 2)
     stop_words: Optional[str] = "german"
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = {"extra": "ignore"}
 
 class SmoteSettings(BaseSettings):
     sampling_strategy: float = 0.3
     random_state: int = 42
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = {"extra": "ignore"}
 
 class CVSettings(BaseSettings):
     folds: int = 5
     shuffle: bool = True
     random_state: int = 42
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = {"extra": "ignore"}
 
 # ========== FINAL AGGREGATOR ==========
-
 @lru_cache()
 def get_settings() -> SimpleNamespace:
     return SimpleNamespace(
-        database  = DatabaseSettings(),
-        s1        = SentinelOneSettings(),
-        etl       = ETLSettings(),
-        tables    = TableSettings(),
-        split     = SplitSettings(),
-        catboost  = CatBoostSettings(),
-        inference = InferenceSettings(),
-        whitelist = WhitelistSettings(),
-        deepvis   = DeepVisSettings(),
-        feature   = FeatureSettings(),
-        tfidf     = TFIDFSettings(),
-        smote     = SmoteSettings(),
-        cv        = CVSettings(),
+        database=DatabaseSettings(),
+        s1=SentinelOneSettings(),
+        etl=ETLSettings(),
+        tables=TableSettings(),
+        split=SplitSettings(),
+        catboost=CatBoostSettings(),
+        inference=InferenceSettings(),
+        whitelist=WhitelistSettings(),
+        deepvis=DeepVisSettings(),
+        feature=FeatureSettings(),
+        tfidf=TFIDFSettings(),
+        smote=SmoteSettings(),
+        cv=CVSettings(),
     )
