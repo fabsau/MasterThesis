@@ -1,14 +1,17 @@
 # src/catlyst/db/connection.py
 
+import logging
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
 from catlyst.settings import get_settings
 
-# on import, this will call get_settings() → which loads .env first
+# Set up logging for this module
+LOG = logging.getLogger(__name__)
+# On import, this will call get_settings() which loads .env first
 cfg = get_settings().database
 
-# use the url property we defined above
+# Use the url property we defined in the settings
 engine = create_engine(
     cfg.url,
     pool_pre_ping=True,
@@ -22,10 +25,11 @@ SessionLocal = sessionmaker(
     future=True,
 )
 
-
 def get_db():
     db = SessionLocal()
+    LOG.debug("Created new DB session")
     try:
         yield db
     finally:
         db.close()
+        LOG.debug("Closed DB session")

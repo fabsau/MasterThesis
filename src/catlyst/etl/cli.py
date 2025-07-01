@@ -30,17 +30,19 @@ def setup_logging(level: str):
 
 
 def run_migrations():
+    LOG.debug("Initializing Alembic configuration from alembic.ini")
     cfg = AlembicConfig("alembic.ini")
     url = get_settings().database.url
     cfg.set_main_option("sqlalchemy.url", url)
+    LOG.debug("Starting Alembic upgrade with URL: %s", url)
     command.upgrade(cfg, "head")
     LOG.info("✅ Alembic migrations applied")
 
 
 def init_db():
-    LOG.info("⚙️  Initializing DB via metadata.create_all()")
+    LOG.debug("Starting DB initialization: calling metadata.create_all()")
     metadata.create_all(bind=engine)
-    LOG.info("✅ Database initialized")
+    LOG.info("✅ Database initialized (metadata.create_all completed)")
 
 
 def parse_args():
@@ -67,19 +69,22 @@ def compute_since_iso(days: int) -> str:
 
 def main():
     try:
+        LOG.debug("Starting ETL main function")
         args = parse_args()
         setup_logging(args.log_level)
+        LOG.debug("Parsed arguments: %s", args)
+
         run_migrations()
 
         if args.init_db:
+            LOG.debug("--init-db flag detected; initializing database")
             init_db()
             sys.exit(0)
 
         settings = get_settings()
-        LOG.debug(
-            f"S1 URL={settings.s1.s1_management_url}, token(len)={len(settings.s1.s1_api_token)}"
-        )
+        LOG.debug("Fetched settings: %s", settings)
 
+        LOG.debug("Creating SentinelOneAPI client")
         client = SentinelOneAPI(
             base_url=settings.s1.s1_management_url,
             token=settings.s1.s1_api_token,
@@ -95,18 +100,23 @@ def main():
 
         LOG.info("Stage 2: Bulk upsert core objects")
         with SessionLocal() as db:
+            LOG.debug("Upserting core objects into DB")
             ingest.batch_upsert_core(db, threats)
+            LOG.debug("Completed upsert of core objects")
 
         LOG.info("Stage 3: Bulk insert dependent objects")
         with SessionLocal() as db:
+            LOG.debug("Upserting dependent objects into DB")
             ingest.batch_upsert_dependents(db, threats)
+            LOG.debug("Completed upsert of dependent objects")
 
         LOG.info("✅ ETL completed successfully")
     except Exception as exc:
         msg = str(exc)[:200]
+        LOG.exception("ETL job failed with exception: %s", msg)
         sys.stderr.write(f"ETL job failed: {msg}\n")
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    main()
+    main()func
