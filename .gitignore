@@ -11,3 +11,5 @@
 catlyst-postgres.env
 Todo.md
 poetry.lock
+
+swagger_2_1.json
