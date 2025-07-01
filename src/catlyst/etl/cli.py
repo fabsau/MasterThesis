@@ -14,12 +14,28 @@ from catlyst.db.schema import metadata
 from catlyst.etl.s1_api import SentinelOneAPI
 from catlyst.etl import db as ingest
 
-LOG = logging.getLogger(__name__)
+from tqdm import tqdm
 
+class TqdmLoggingHandler(logging.StreamHandler):
+    """
+    Logging handler that uses tqdm.write so log messages don't overwrite tqdm bars.
+    """
+    def __init__(self, level=logging.NOTSET):
+        super().__init__(level)
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.write(msg)
+            self.flush()
+        except Exception:
+            self.handleError(record)
 
-def setup_logging(level: str):
-    lvl = getattr(logging, level.upper(), logging.INFO)
-    h = logging.StreamHandler(sys.stdout)
+def setup_logging(level: str, use_tqdm: bool = False):
+    lvl = getattr(logging, level.upper(), logging.DEBUG)
+    if use_tqdm:
+        h = TqdmLoggingHandler()
+    else:
+        h = logging.StreamHandler(sys.stdout)
     h.setFormatter(logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     ))
@@ -28,8 +44,8 @@ def setup_logging(level: str):
     root.setLevel(lvl)
     root.addHandler(h)
 
-
 def run_migrations():
+    LOG = logging.getLogger(__name__)
     LOG.debug("Initializing Alembic configuration from alembic.ini")
     cfg = AlembicConfig("alembic.ini")
     url = get_settings().database.url
@@ -38,12 +54,11 @@ def run_migrations():
     command.upgrade(cfg, "head")
     LOG.info("✅ Alembic migrations applied")
 
-
 def init_db():
+    LOG = logging.getLogger(__name__)
     LOG.debug("Starting DB initialization: calling metadata.create_all()")
     metadata.create_all(bind=engine)
     LOG.info("✅ Database initialized (metadata.create_all completed)")
-
 
 def parse_args():
     etl = get_settings().etl
@@ -60,21 +75,25 @@ def parse_args():
                    help="Disable all tqdm progress bars")
     return p.parse_args()
 
-
 def compute_since_iso(days: int) -> str:
     fmt = get_settings().etl.iso_format
     since = datetime.now(timezone.utc) - timedelta(days=days)
     return since.strftime(fmt)
 
-
 def main():
     try:
-        LOG.debug("Starting ETL main function")
         args = parse_args()
-        setup_logging(args.log_level)
+        # SETUP LOGGING before migrations (for early logs and Alembic logs)
+        setup_logging(args.log_level, use_tqdm=not args.no_progress)
+        LOG = logging.getLogger(__name__)
+        LOG.debug("Starting ETL main function")
         LOG.debug("Parsed arguments: %s", args)
 
         run_migrations()
+
+        # SETUP LOGGING again after Alembic wipes our handlers
+        setup_logging(args.log_level, use_tqdm=not args.no_progress)
+        LOG = logging.getLogger(__name__)
 
         if args.init_db:
             LOG.debug("--init-db flag detected; initializing database")
@@ -83,40 +102,34 @@ def main():
 
         settings = get_settings()
         LOG.debug("Fetched settings: %s", settings)
-
         LOG.debug("Creating SentinelOneAPI client")
         client = SentinelOneAPI(
             base_url=settings.s1.s1_management_url,
             token=settings.s1.s1_api_token,
             max_workers=args.workers
         )
-
         since_iso = compute_since_iso(args.since_days)
         verdicts = [v.strip() for v in args.verdicts.split(",")]
-
         LOG.info("🔄 ETL starting – since_days=%d → %s", args.since_days, since_iso)
         threats = list(client.fetch_all_threats(since_iso, verdicts, show_progress=not args.no_progress))
         LOG.info("→ %d threats fetched", len(threats))
-
         LOG.info("Stage 2: Bulk upsert core objects")
         with SessionLocal() as db:
             LOG.debug("Upserting core objects into DB")
-            ingest.batch_upsert_core(db, threats)
+            ingest.batch_upsert_core(db, threats, show_progress=not args.no_progress)
             LOG.debug("Completed upsert of core objects")
-
         LOG.info("Stage 3: Bulk insert dependent objects")
         with SessionLocal() as db:
             LOG.debug("Upserting dependent objects into DB")
-            ingest.batch_upsert_dependents(db, threats)
+            ingest.batch_upsert_dependents(db, threats, show_progress=not args.no_progress)
             LOG.debug("Completed upsert of dependent objects")
-
         LOG.info("✅ ETL completed successfully")
     except Exception as exc:
         msg = str(exc)[:200]
+        LOG = logging.getLogger(__name__)
         LOG.exception("ETL job failed with exception: %s", msg)
         sys.stderr.write(f"ETL job failed: {msg}\n")
         sys.exit(1)
 
-
 if __name__ == "__main__":
-    main()func
+    main()

@@ -1,4 +1,5 @@
 # src/catlyst/etl/s1_api.py
+
 import time
 import logging
 from datetime import datetime, timedelta, timezone
@@ -40,6 +41,7 @@ class SentinelOneAPI:
             self.api_prefix = f"{self.base_url}/web/api/{s1.s1_api_version}"
 
         self.session = self._build_session()
+        LOG.debug("SentinelOneAPI initialized: base_url=%s with pool_size=%d", self.base_url, self.pool_size)
 
     def _build_session(self) -> requests.Session:
         session = requests.Session()
@@ -60,6 +62,7 @@ class SentinelOneAPI:
         })
         if not self.verify_ssl:
             requests.packages.urllib3.disable_warnings()
+        LOG.debug("HTTP session built with headers: %s", session.headers)
         return session
 
     @backoff.on_exception(
@@ -68,12 +71,14 @@ class SentinelOneAPI:
         max_time=60
     )
     def _get(self, url: str, **kwargs) -> requests.Response:
+        LOG.debug("Sending GET request to: %s with kwargs: %s", url, kwargs)
         resp = self.session.get(
             url,
             verify=self.verify_ssl,
             timeout=self.dv_timeout,
             **kwargs
         )
+        LOG.debug("Received response: %s from GET %s", resp.status_code, url)
         resp.raise_for_status()
         return resp
 
@@ -88,13 +93,14 @@ class SentinelOneAPI:
             "analystVerdicts": ",".join(verdicts),
             "limit": self.page_limit,
         }
+        LOG.debug("Starting threat fetch with params: %s", params)
         bar = None
         while True:
             resp = self._get(url, params=params)
             js = resp.json()
             data = js.get("data", [])
             pag = js.get("pagination", {}) or {}
-            # initialize progress bar once
+            LOG.debug("Fetched %d threats; pagination: %s", len(data), pag)
             if show_progress and bar is None:
                 total = pag.get("totalItems", len(data))
                 bar = tqdm(total=total, desc="threats", unit="thr")
@@ -109,6 +115,7 @@ class SentinelOneAPI:
                 break
             # Use "cursor" for the next page query param (instead of "pageToken")
             params["cursor"] = next_token
+            LOG.debug("Advancing to next page with cursor: %s", next_token)
 
     @backoff.on_exception(
         backoff.expo,
@@ -119,7 +126,7 @@ class SentinelOneAPI:
         url    = f"{self.api_prefix}/threats/{threat_id}/notes"
         notes  = []
         params = {"limit": self.note_page}
-
+        LOG.debug("Starting fetch_notes for threat_id: %s", threat_id)
         while True:
             resp = self._get(url, params=params)
             js   = resp.json()
@@ -133,7 +140,8 @@ class SentinelOneAPI:
             if not cursor:
                 break
             params["cursor"] = cursor
-
+            LOG.debug("Advancing to next notes page with cursor: %s", cursor)
+        LOG.debug("Completed fetch_notes: Total notes fetched: %d", len(notes))
         return notes
 
     @backoff.on_exception(
@@ -148,7 +156,7 @@ class SentinelOneAPI:
         thinfo = threat.get("threatInfo", {}) or {}
         created = thinfo.get("createdAt")
         if not created:
-            LOG.debug("Skipping DV; no createdAt")
+            LOG.debug("Skipping DV; no createdAt for threat ID: %s", threat.get("id", "unknown"))
             return []
 
         try:
@@ -159,14 +167,14 @@ class SentinelOneAPI:
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=self.dv_lookback)
         if dt < cutoff:
-            LOG.debug("Skipping DV; older than lookback")
+            LOG.debug("Skipping DV; threat ID: %s older than lookback", threat.get("id", "unknown"))
             return []
 
         start = dt - timedelta(minutes=5)
         end   = dt + timedelta(hours=1)
         query_core = self._build_query_core(threat)
         if not query_core:
-            LOG.debug("Skipping DV; no valid query core")
+            LOG.debug("Skipping DV; no valid query core for threat ID: %s", threat.get("id", "unknown"))
             return []
 
         body = {
