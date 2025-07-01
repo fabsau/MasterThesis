@@ -12,6 +12,9 @@ cfg = context.config
 if cfg.config_file_name:
     fileConfig(cfg.config_file_name)
 
+if cfg.config_file_name:
+    fileConfig(cfg.config_file_name, disable_existing_loggers=False)
+
 # build the same DSN from our DatabaseSettings
 settings = get_settings()
 db = settings.database
