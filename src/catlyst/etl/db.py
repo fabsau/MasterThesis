@@ -151,14 +151,7 @@ def batch_upsert_core(db: Session, all_threats: List[Dict[str, Any]]) -> None:
                     threat_name=ti.get("threatName"),
                     publisher_name=ti.get("publisherName"),
                     certificate_id=ti.get("certificateId"),
-                    detection_type=ti.get("detectionType"),
-                    confidence_level=ti.get("confidenceLevel"),
-                    incident_status=ti.get("incidentStatus"),
-                    analyst_verdict=ti.get("analystVerdict"),
-                    classification=ti.get("classification"),
-                    classification_src=ti.get("classificationSource"),
                     storyline=ti.get("storyline"),
-                    initiated_by=ti.get("initiatedBy"),
                     identified_at=ti.get("identifiedAt"),
                     created_at=ti.get("createdAt"),
                 )
@@ -192,8 +185,6 @@ def batch_upsert_core(db: Session, all_threats: List[Dict[str, Any]]) -> None:
         sample = next(iter(threats_payload.values()))
         upd = {k: pg_insert(threats).excluded[k] for k in sample if k != "threat_id"}
         upd.update({
-            "incident_status": pg_insert(threats).excluded.incident_status,
-            "analyst_verdict": pg_insert(threats).excluded.analyst_verdict,
             "last_updated_at": pg_insert(threats).excluded.created_at,
         })
         _bulk_upsert_with_fallback(
@@ -228,11 +219,21 @@ def batch_upsert_dependents(db: Session, all_threats: List[Dict[str, Any]]) -> N
         if not tid:
             continue
 
-        verdict = (ti.get("analystVerdict") or "").strip()
-        if verdict:
+        # --- Build label from all required fields ---
+        label_payload = {
+            "threat_id": tid,
+            "detection_type": ti.get("detectionType"),
+            "confidence_level": ti.get("confidenceLevel"),
+            "incident_status": ti.get("incidentStatus"),
+            "verdict": ti.get("analystVerdict"),
+            "classification": ti.get("classification"),
+            "classification_src": ti.get("classificationSource"),
+            "initiated_by": ti.get("initiatedBy"),
+        }
+        # Only add if at least one value is present (besides threat_id)
+        if any(label_payload[k] for k in label_payload if k != "threat_id"):
             try:
-                obj = LabelModel(threat_id=tid, verdict=verdict,
-                                 source="initial_fetch", labeled_by="system")
+                obj = LabelModel(**label_payload)
                 labels.append(obj.dict())
             except Exception as e:
                 log.warning("LabelModel failed for %s: %s", tid, e)
@@ -293,5 +294,3 @@ def batch_upsert_dependents(db: Session, all_threats: List[Dict[str, Any]]) -> N
         "Dependent bulk insert complete: %d labels, %d indicators, %d notes, %d deepvis",
         len(labels), len(indicators), len(notes), len(deepvis),
     )
-
-

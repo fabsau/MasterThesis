@@ -43,6 +43,7 @@ class EndpointModel(BaseModel):
 
 class ThreatModel(BaseModel):
     threat_id: int = Field(..., gt=0)
+    storyline: Optional[str] = Field(None)
     tenant_id: int = Field(..., gt=0)
     endpoint_id: Optional[int] = Field(None, ge=0)
 
@@ -54,14 +55,6 @@ class ThreatModel(BaseModel):
     threat_name: Optional[str] = Field(None)
     publisher_name: Optional[str] = Field(None)
     certificate_id: Optional[str] = Field(None)
-    detection_type: Optional[str] = Field(None)
-    confidence_level: Optional[str] = Field(None)
-    incident_status: Optional[str] = Field(None)
-    analyst_verdict: Optional[str] = Field(None)
-    classification_src: Optional[str] = Field(None)
-    classification: Optional[str] = Field(None)
-    storyline: Optional[str] = Field(None)
-    initiated_by: Optional[str] = Field(None)
     identified_at: datetime = Field(..., description="When S1 first saw it")
     created_at: datetime = Field(..., description="When S1 created it")
 
@@ -90,9 +83,14 @@ class NoteModel(BaseModel):
 
 class LabelModel(BaseModel):
     threat_id: int = Field(..., gt=0)
-    verdict: str = Field(..., min_length=1)
-    source: str = Field(..., min_length=1)
-    labeled_by: str = Field(..., min_length=1)
+    verdict: Optional[str] = Field(None)
+    detection_type: Optional[str] = Field(None)
+    incident_status: Optional[str] = Field(None)
+    confidence_level: Optional[str] = Field(None)
+    classification: Optional[str] = Field(None)
+    classification_src: Optional[str] = Field(None)
+    initiated_by: Optional[str] = Field(None)
+    ingested_at: Optional[datetime] = Field(None)
 
 
 class IndicatorModel(BaseModel):

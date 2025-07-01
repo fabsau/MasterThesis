@@ -63,6 +63,7 @@ endpoints = Table(
 threats = Table(
     "threats", metadata,
     Column("threat_id",           BigInteger, primary_key=True),
+    Column("storyline",           Text),
     Column("tenant_id",           BigInteger,
            ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
            nullable=False),
@@ -76,16 +77,6 @@ threats = Table(
     Column("threat_name",         Text),
     Column("publisher_name",      Text),
     Column("certificate_id",      Text),
-    Column("detection_type",      detection_type_enum),
-    Column("confidence_level",    Text),
-    Column("incident_status",     incident_status_enum),
-    Column("analyst_verdict",     analyst_verdict_enum,
-           nullable=False,
-           server_default=text("'undefined'")),
-    Column("classification",      Text),
-    Column("storyline",           Text),
-    Column("classification_src",  Text),
-    Column("initiated_by",        Text),
     Column("identified_at",       TIMESTAMP(timezone=True), nullable=False),
     Column("created_at",          TIMESTAMP(timezone=True), nullable=False),
     Column("ingested_at",         TIMESTAMP(timezone=True),
@@ -95,11 +86,10 @@ threats = Table(
     UniqueConstraint("tenant_id", "sha256", "identified_at",
                      name="uq_threat_unique"),
     Index("ix_threats_sha256",     "sha256"),
-    Index("ix_threats_verdict",    "analyst_verdict"),
-    Index("ix_threats_confidence", "confidence_level"),
-    Index("ix_threats_status",     "incident_status"),
+    # Indexes for removed columns dropped
     Index("ix_threats_tenant_date", "tenant_id", "identified_at"),
 )
+
 
 threat_notes = Table(
     "threat_notes", metadata,
@@ -119,29 +109,20 @@ threat_labels = Table(
     Column("threat_id",   BigInteger,
            ForeignKey("threats.threat_id", ondelete="CASCADE"),
            nullable=False),
-    Column("verdict",     analyst_verdict_enum, nullable=False),
+    Column("verdict",             analyst_verdict_enum, nullable=False, server_default=text("'undefined'")),
+
+    Column("incident_status",     incident_status_enum),
+    Column("detection_type",      detection_type_enum),
+    Column("confidence_level",    Text),
+    Column("classification",      Text),
+    Column("classification_src",  Text),
+    Column("initiated_by",        Text),
     Column("ingested_at", TIMESTAMP(timezone=True),
            nullable=False, server_default="now()"),
-    Column("comment",     Text),
     Index("ix_labels_threat", "threat_id"),
     Index("ix_labels_verdict", "verdict"),
 )
 
-# threat_mitigations = Table(
-#     "threat_mitigations", metadata,
-#     Column("mitigation_id",   BigInteger, primary_key=True, autoincrement=True),
-#     Column("threat_id",       BigInteger,
-#            ForeignKey("threats.threat_id", ondelete="CASCADE"),
-#            nullable=False),
-#     Column("action",          Text),
-#     Column("status",          Text),
-#     Column("report_id",       Text),
-#     Column("started_at",      TIMESTAMP(timezone=True)),
-#     Column("ended_at",        TIMESTAMP(timezone=True)),
-#     Column("last_updated",    TIMESTAMP(timezone=True)),
-#     Column("raw",             JSONB),
-#     Index("ix_mitigations_threat", "threat_id"),
-# )
 
 #
 #  DEDUPLICATION MATCHES
