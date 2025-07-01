@@ -7,7 +7,7 @@ FastAPI, etc.) can trust the data.
 
 from pydantic import BaseModel, Field, validator, field_validator, ValidationInfo
 from typing import Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 
@@ -31,7 +31,7 @@ class EndpointModel(BaseModel):
     agent_version: Optional[str] = Field(None)
     scan_started_at: Optional[datetime] = Field(None)
     scan_finished_at: Optional[datetime] = Field(None)
-    ingested_at: Optional[datetime] = Field(None)
+    ingested_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @validator("scan_finished_at")
     def scan_finished_after_start(cls, v: Optional[datetime], values: dict) -> Optional[datetime]:
