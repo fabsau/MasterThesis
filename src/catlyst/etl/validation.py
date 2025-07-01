@@ -26,11 +26,12 @@ class EndpointModel(BaseModel):
     os_revision: Optional[str] = Field(None)
     ip_v4: Optional[str] = Field(None)
     ip_v6: Optional[str] = Field(None)
-    group_id: Optional[int] = Field(None)
-    site_id: Optional[int] = Field(None)
+    group_id: Optional[int] = Field(None, ge=0)
+    site_id: Optional[int] = Field(None, ge=0)
     agent_version: Optional[str] = Field(None)
     scan_started_at: Optional[datetime] = Field(None)
     scan_finished_at: Optional[datetime] = Field(None)
+    ingested_at: Optional[datetime] = Field(None)
 
     @validator("scan_finished_at")
     def scan_finished_after_start(cls, v: Optional[datetime], values: dict) -> Optional[datetime]:
@@ -58,6 +59,8 @@ class ThreatModel(BaseModel):
     incident_status: Optional[str] = Field(None)
     analyst_verdict: Optional[str] = Field(None)
     classification_src: Optional[str] = Field(None)
+    classification: Optional[str] = Field(None)
+    storyline: Optional[str] = Field(None)
     initiated_by: Optional[str] = Field(None)
     identified_at: datetime = Field(..., description="When S1 first saw it")
     created_at: datetime = Field(..., description="When S1 created it")
@@ -99,3 +102,4 @@ class IndicatorModel(BaseModel):
     ids: Optional[List[int]] = Field(None)
     tactics: Optional[List[str]] = Field(None)
     techniques: Optional[Any] = Field(None)  # JSONB‐like
+

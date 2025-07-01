@@ -119,8 +119,11 @@ def batch_upsert_core(db: Session, all_threats: List[Dict[str, Any]]) -> None:
                     computer_name=rt.get("agentComputerName"),
                     os_name=rt.get("agentOsName"),
                     os_type=rt.get("agentOsType"),
-                    ip_v4=rt.get("agentLocalIpV4"),
-                    ip_v6=rt.get("agentLocalIpV6"),
+                    os_revision=rt.get("agentOsRevision"),
+                    ip_v4=det.get("agentIpV4") or rt.get("agentLocalIpV4"),
+                    ip_v6=det.get("agentIpV6") or rt.get("agentLocalIpV6"),
+                    group_id=int(rt.get("groupId") or det.get("groupId") or 0),
+                    site_id=int(rt.get("siteId") or det.get("siteId") or 0),
                     agent_version=rt.get("agentVersion"),
                     scan_started_at=rt.get("scanStartedAt"),
                     scan_finished_at=rt.get("scanFinishedAt"),
@@ -152,7 +155,9 @@ def batch_upsert_core(db: Session, all_threats: List[Dict[str, Any]]) -> None:
                     confidence_level=ti.get("confidenceLevel"),
                     incident_status=ti.get("incidentStatus"),
                     analyst_verdict=ti.get("analystVerdict"),
+                    classification=ti.get("classification"),
                     classification_src=ti.get("classificationSource"),
+                    storyline=ti.get("storyline"),
                     initiated_by=ti.get("initiatedBy"),
                     identified_at=ti.get("identifiedAt"),
                     created_at=ti.get("createdAt"),
@@ -288,3 +293,5 @@ def batch_upsert_dependents(db: Session, all_threats: List[Dict[str, Any]]) -> N
         "Dependent bulk insert complete: %d labels, %d indicators, %d notes, %d deepvis",
         len(labels), len(indicators), len(notes), len(deepvis),
     )
+
+

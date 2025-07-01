@@ -4,12 +4,9 @@ from sqlalchemy import (
     MetaData, Table, Column,
     BigInteger, Integer, Text, TIMESTAMP,
     ForeignKey, UniqueConstraint, Index,
-    # JSON
+    text, func
 )
-# from sqlalchemy.dialects.postgresql import ARRAY
-from sqlalchemy import text, func
 from sqlalchemy.dialects.postgresql import UUID, REAL, JSONB, BYTEA, INET, ENUM, ARRAY
-
 metadata = MetaData()
 
 #
@@ -19,7 +16,7 @@ detection_type_enum = ENUM(
     'static', 'dynamic', name='detection_type', metadata=metadata
 )
 incident_status_enum = ENUM(
-    'new', 'in_progress', 'resolved', # TODO CHECK FOR NEW! ###
+    'unresolved', 'in_progress', 'resolved',
     name='incident_status', metadata=metadata
 )
 analyst_verdict_enum = ENUM(
@@ -28,42 +25,14 @@ analyst_verdict_enum = ENUM(
 )
 
 #
-#  LOOKUP TABLES (can be dropped in favor of ENUMs)
-#
-# detection_types = Table(
-#     "detection_types", metadata,
-#     Column("id",   Integer, primary_key=True, autoincrement=True),
-#     Column("name", Text,    nullable=False, unique=True),
-# )
-
-# confidence_levels = Table(
-#     "confidence_levels", metadata,
-#     Column("id",   Integer, primary_key=True, autoincrement=True),
-#     Column("name", Text,    nullable=False, unique=True),
-# )
-
-# incident_statuses = Table(
-#     "incident_statuses", metadata,
-#     Column("id",   Integer, primary_key=True, autoincrement=True),
-#     Column("name", Text,    nullable=False, unique=True),
-# )
-
-# analyst_verdicts = Table(
-#     "analyst_verdicts", metadata,
-#     Column("id",   Integer, primary_key=True, autoincrement=True),
-#     Column("name", Text,    nullable=False, unique=True),
-# )
-
-#
 #  CORE TABLES
 #
 tenants = Table(
     "tenants", metadata,
     Column("tenant_id", BigInteger, primary_key=True),
     Column("name",      Text,       nullable=False),
-    # Column("region",    Text),
-    # Column("created_at", TIMESTAMP(timezone=True),
-    #        nullable=False, server_default="now()"),
+    Column("ingested_at", TIMESTAMP(timezone=True),
+           nullable=False, server_default="now()"),
 )
 
 endpoints = Table(
@@ -84,7 +53,8 @@ endpoints = Table(
     Column("agent_version", Text),
     Column("scan_started_at",   TIMESTAMP(timezone=True)),
     Column("scan_finished_at",  TIMESTAMP(timezone=True)),
-    Column("created_at",    TIMESTAMP(timezone=True),
+    # The ingested_at column replaces created_at as per suggested changes.
+    Column("ingested_at", TIMESTAMP(timezone=True),
            nullable=False, server_default="now()"),
     UniqueConstraint("tenant_id", "agent_uuid", name="uq_endpoint_tenant_uuid"),
     Index("ix_endpoints_tenant", "tenant_id"),
@@ -107,11 +77,13 @@ threats = Table(
     Column("publisher_name",      Text),
     Column("certificate_id",      Text),
     Column("detection_type",      detection_type_enum),
-    Column("confidence_level",    Text),      # or FK to confidence_levels.id
+    Column("confidence_level",    Text),
     Column("incident_status",     incident_status_enum),
     Column("analyst_verdict",     analyst_verdict_enum,
            nullable=False,
            server_default=text("'undefined'")),
+    Column("classification",      Text),
+    Column("storyline",           Text),
     Column("classification_src",  Text),
     Column("initiated_by",        Text),
     Column("identified_at",       TIMESTAMP(timezone=True), nullable=False),
@@ -119,9 +91,7 @@ threats = Table(
     Column("ingested_at",         TIMESTAMP(timezone=True),
            nullable=False, server_default="now()"),
     Column("last_updated_at",     TIMESTAMP(timezone=True),
-           nullable=False,
-           server_default=func.now()),
-    # Column("raw_payload",         JSONB,      nullable=False),
+           nullable=False, server_default=func.now()),
     UniqueConstraint("tenant_id", "sha256", "identified_at",
                      name="uq_threat_unique"),
     Index("ix_threats_sha256",     "sha256"),
@@ -138,7 +108,7 @@ threat_notes = Table(
            ForeignKey("threats.threat_id", ondelete="CASCADE"),
            nullable=False),
     Column("note",      Text, nullable=False),
-    Column("created_at", TIMESTAMP(timezone=True),
+    Column("ingested_at", TIMESTAMP(timezone=True),
            nullable=False, server_default="now()"),
     Index("ix_notes_threat", "threat_id"),
 )
@@ -150,9 +120,7 @@ threat_labels = Table(
            ForeignKey("threats.threat_id", ondelete="CASCADE"),
            nullable=False),
     Column("verdict",     analyst_verdict_enum, nullable=False),
-    Column("source",      Text),
-    Column("labeled_by",  Text),
-    Column("labeled_at",  TIMESTAMP(timezone=True),
+    Column("ingested_at", TIMESTAMP(timezone=True),
            nullable=False, server_default="now()"),
     Column("comment",     Text),
     Index("ix_labels_threat", "threat_id"),
@@ -210,7 +178,7 @@ threat_indicators = Table(
     Column("tactics",      ARRAY(Text)),
     Column("techniques",   JSONB),
     # Column("raw",          JSONB, nullable=False),
-    Column("created_at",   TIMESTAMP(timezone=True),
+    Column("ingested_at",   TIMESTAMP(timezone=True),
            nullable=False, server_default="now()"),
     Index("ix_indicators_threat", "threat_id"),
     Index("ix_indicators_ids",     "ids",      postgresql_using="gin"),
@@ -297,14 +265,10 @@ __all__ = [
     "metadata",
     # enums
     "detection_type_enum", "incident_status_enum", "analyst_verdict_enum",
-    # lookup tables
-    # "detection_types", "confidence_levels",
-    # "incident_statuses", "analyst_verdicts",
-    # core
+    # core tables
     "tenants", "endpoints", "threats",
     # child tables
     "threat_notes", "threat_labels",
-    # "threat_mitigations",
     "threat_matches",
     # ML metadata
     "model_runs", "model_run_rows", "model_run_columns",
