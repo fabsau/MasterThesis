@@ -1,14 +1,16 @@
+# src/catlyst/etl/db.py
+
 """
 ETL → Batch upsert/inserts with full Pydantic validation.
 This module assumes you have the complete list of threat payloads already
 loaded in memory. It first extracts unique core objects (tenants, endpoints,
 threats) and performs bulk upserts (with commit). Then, it processes and
-inserts dependent objects (labels, indicators, notes, and deepvis events).
+inserts dependent objects (labels, normalized indicators, notes, and deepvis events).
 All data is validated using our Pydantic models from catlyst/etl/validation.py.
 """
 
 import logging
-from typing import Any, Dict, List, Callable
+from typing import Any, Dict, List
 from pydantic import ValidationError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy import insert
@@ -23,14 +25,18 @@ from catlyst.db.schema import (
     threat_indicators,
     threat_notes,
     deepvis_events,
+    indicator_tactics,
+    tactic_techniques,
 )
 from catlyst.etl.validation import (
     TenantModel,
     EndpointModel,
     ThreatModel,
     LabelModel,
-    IndicatorModel,
     NoteModel,
+    IndicatorModel,
+    TacticModel,
+    TechniqueModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +45,7 @@ def _bulk_upsert_with_fallback(
     db: Session,
     table,
     payloads: List[Dict[str, Any]],
-    stmt_builder: Callable[[List[Dict[str, Any]]], Any],
+    stmt_builder: Any,
     chunk_size: int = 100,
 ) -> None:
     try:
@@ -167,26 +173,6 @@ def insert_labels(db: Session, threat_id: int, verdict: str) -> None:
         db.rollback()
         logger.error("Error inserting label for threat %s: %s", threat_id, e)
 
-def insert_indicators(db: Session, threat_id: int, indicators: List[Dict[str, Any]]) -> None:
-    for ind in indicators or []:
-        payload = {
-            "threat_id": threat_id,
-            "category": ind.get("category"),
-            "description": ind.get("description"),
-            "ids": ind.get("ids"),
-            "tactics": ind.get("tactics"),
-            "techniques": ind.get("techniques"),
-        }
-        try:
-            indicator = IndicatorModel(**payload)
-            stmt = insert(threat_indicators).values(**indicator.dict()).on_conflict_do_nothing()
-            db.execute(stmt)
-        except ValidationError as exc:
-            logger.warning("Skipping invalid indicator (threat=%s): %s", threat_id, exc)
-        except Exception as e:
-            logger.error("Error inserting indicator for threat %s: %s", threat_id, e)
-    db.commit()
-
 def batch_upsert_core(db: Session, all_threats: List[Dict[str, Any]], show_progress: bool = True) -> None:
     """
     Process all payloads to bulk upsert tenants, endpoints, and threats.
@@ -289,14 +275,87 @@ def batch_upsert_core(db: Session, all_threats: List[Dict[str, Any]], show_progr
             )
         )
 
+def insert_indicators_normalized(
+    db: Session, threat_id: int, indicators: List[Dict[str, Any]]
+) -> None:
+    """
+    Fully normalized insert of each indicator → tactics → techniques.
+    """
+    for ind in indicators or []:
+        # 1) Upsert base indicator
+        payload = {
+            "threat_id": threat_id,
+            "category": ind.get("category"),
+            "description": ind.get("description"),
+            "ids": ind.get("ids"),
+        }
+        try:
+            res = db.execute(
+                insert(threat_indicators)
+                .values(**payload)
+                .on_conflict_do_nothing()
+                .returning(threat_indicators.c.indicator_id)
+            )
+            row = res.fetchone()
+            db.commit()
+            if not row:
+                # already existed; skip inserting tactics/techniques for this indicator
+                continue
+            indicator_id = row.indicator_id
+        except Exception as e:
+            db.rollback()
+            logger.error("Error upserting indicator %s: %s", payload, e)
+            continue
+
+        # 2) Insert each tactic for this indicator
+        for t in ind.get("tactics", []):
+            try:
+                tac = TacticModel(**t)
+            except ValidationError as exc:
+                logger.warning("Skipping invalid tactic for indicator=%s: %s", indicator_id, exc)
+                continue
+
+            try:
+                res2 = db.execute(
+                    insert(indicator_tactics)
+                    .values(
+                        indicator_id=indicator_id,
+                        name=tac.name,
+                        source=tac.source
+                    )
+                    .returning(indicator_tactics.c.tactic_id)
+                )
+                tactic_id = res2.scalar_one()
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.error("Error inserting tactic %s for indicator_id=%s: %s", tac, indicator_id, e)
+                continue
+
+            # 3) Insert each technique under that tactic
+            for tech in t.get("techniques", []):
+                try:
+                    techm = TechniqueModel(**tech)
+                except ValidationError as exc:
+                    logger.warning("Skipping invalid technique for tactic=%s: %s", tactic_id, exc)
+                    continue
+                try:
+                    db.execute(
+                        insert(tactic_techniques)
+                        .values(
+                            tactic_id=tactic_id,
+                            name=techm.name,
+                            link=techm.link
+                        )
+                    )
+                except Exception as e:
+                    logger.error("Error inserting technique %s for tactic_id=%s: %s", techm, tactic_id, e)
+            db.commit()
+
 def batch_upsert_dependents(db: Session, all_threats: List[Dict[str, Any]], show_progress: bool = True) -> None:
     """
-    Processes and bulk inserts labels, indicators, notes, and deepvis events.
+    Processes and inserts labels, notes, normalized indicators, and deepvis events.
     """
-    labels: List[Dict[str, Any]] = []
-    indicators: List[Dict[str, Any]] = []
-    notes: List[Dict[str, Any]] = []
-    deepvis: List[Dict[str, Any]] = []
     iter_fn = tqdm if show_progress else lambda x, **kw: x
 
     for t in iter_fn(all_threats, desc="Processing dependent objects", unit="record"):
@@ -304,65 +363,33 @@ def batch_upsert_dependents(db: Session, all_threats: List[Dict[str, Any]], show
         threat_id = int(ti.get("threatId") or 0)
         if not threat_id:
             continue
+
         # Process label from analyst verdict
         verdict = (ti.get("analystVerdict") or "").strip()
         if verdict:
-            try:
-                label = LabelModel(threat_id=threat_id, verdict=verdict)
-                labels.append(label.dict())
-            except ValidationError as exc:
-                logger.warning("Skipping invalid label (threat=%s): %s", threat_id, exc)
-        # Process indicators
-        for ind in t.get("indicators", []):
-            payload = {
-                "threat_id": threat_id,
-                "category": ind.get("category"),
-                "description": ind.get("description"),
-                "ids": ind.get("ids"),
-                "tactics": ind.get("tactics"),
-                "techniques": ind.get("techniques"),
-            }
-            try:
-                obj = IndicatorModel(**payload)
-                indicators.append(obj.dict())
-            except ValidationError as exc:
-                logger.warning("IndicatorModel failed for %s: %s", threat_id, exc)
+            insert_labels(db, threat_id, verdict)
+
         # Process notes
-        for note in t.get("notes", []):
-            try:
-                obj = NoteModel(threat_id=threat_id, note=note)
-                notes.append(obj.dict())
-            except ValidationError as exc:
-                logger.warning("NoteModel failed for %s: %s", threat_id, exc)
+        insert_notes(db, threat_id, t.get("notes", []))
+
+        # Process indicators (normalized)
+        insert_indicators_normalized(db, threat_id, t.get("indicators", []))
+
         # Process deepvis events
         for ev in t.get("deepvis", []):
-            deepvis.append({
-                "threat_id": threat_id,
-                "event_time": ev.get("eventTime"),
-                "event_type": ev.get("eventType"),
-                "event_cat": ev.get("eventCategory"),
-                "severity": ev.get("severity"),
-            })
+            try:
+                db.execute(
+                    insert(deepvis_events)
+                    .values(
+                        threat_id=threat_id,
+                        event_time=ev.get("eventTime"),
+                        event_type=ev.get("eventType"),
+                        event_cat=ev.get("eventCategory"),
+                        severity=ev.get("severity"),
+                    )
+                )
+            except Exception as e:
+                logger.error("Error inserting deepvis event for threat %s: %s", threat_id, e)
+        db.commit()
 
-    if labels:
-        _bulk_upsert_with_fallback(
-            db, threat_labels, labels,
-            lambda p: pg_insert(threat_labels).values(p).on_conflict_do_nothing()
-        )
-    if indicators:
-        _bulk_upsert_with_fallback(
-            db, threat_indicators, indicators,
-            lambda p: pg_insert(threat_indicators).values(p).on_conflict_do_nothing()
-        )
-    if notes:
-        _bulk_upsert_with_fallback(
-            db, threat_notes, notes,
-            lambda p: pg_insert(threat_notes).values(p).on_conflict_do_nothing()
-        )
-    if deepvis:
-        _bulk_upsert_with_fallback(
-            db, deepvis_events, deepvis,
-            lambda p: pg_insert(deepvis_events).values(p).on_conflict_do_nothing()
-        )
-    logger.info("Dependent bulk insert complete: %d labels, %d indicators, %d notes, %d deepvis",
-                len(labels), len(indicators), len(notes), len(deepvis))
+    logger.info("Dependent insert (normalized) complete.")

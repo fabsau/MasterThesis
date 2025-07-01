@@ -11,6 +11,10 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 
+def utcnow():
+    return datetime.now(timezone.utc)
+
+
 class TenantModel(BaseModel):
     tenant_id: int = Field(..., gt=0, description="Primary key from S1 accountId")
     name: str = Field(..., min_length=1, description="Tenant/display name")
@@ -20,18 +24,18 @@ class EndpointModel(BaseModel):
     endpoint_id: int = Field(..., gt=0)
     tenant_id: int = Field(..., gt=0)
     agent_uuid: UUID
-    computer_name: Optional[str] = Field(None)
-    os_name: Optional[str] = Field(None)
-    os_type: Optional[str] = Field(None)
-    os_revision: Optional[str] = Field(None)
-    ip_v4: Optional[str] = Field(None)
-    ip_v6: Optional[str] = Field(None)
+    computer_name: Optional[str] = None
+    os_name: Optional[str] = None
+    os_type: Optional[str] = None
+    os_revision: Optional[str] = None
+    ip_v4: Optional[str] = None
+    ip_v6: Optional[str] = None
     group_id: Optional[int] = Field(None, ge=0)
     site_id: Optional[int] = Field(None, ge=0)
-    agent_version: Optional[str] = Field(None)
-    scan_started_at: Optional[datetime] = Field(None)
-    scan_finished_at: Optional[datetime] = Field(None)
-    ingested_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    agent_version: Optional[str] = None
+    scan_started_at: Optional[datetime] = None
+    scan_finished_at: Optional[datetime] = None
+    ingested_at: Optional[datetime] = Field(default_factory=utcnow)
 
     @validator("scan_finished_at")
     def scan_finished_after_start(cls, v: Optional[datetime], values: dict) -> Optional[datetime]:
@@ -43,27 +47,23 @@ class EndpointModel(BaseModel):
 
 class ThreatModel(BaseModel):
     threat_id: int = Field(..., gt=0)
-    storyline: Optional[str] = Field(None)
+    storyline: Optional[str]
     tenant_id: int = Field(..., gt=0)
-    endpoint_id: Optional[int] = Field(None, ge=0)
+    endpoint_id: Optional[int]
 
-    md5: Optional[bytes] = Field(None)
-    sha1: Optional[bytes] = Field(None)
-    sha256: Optional[bytes] = Field(None)
-    file_path: Optional[str] = Field(None)
+    md5: Optional[bytes]
+    sha1: Optional[bytes]
+    sha256: Optional[bytes]
+    file_path: Optional[str]
     file_size: Optional[int] = Field(None, ge=0)
-    threat_name: Optional[str] = Field(None)
-    publisher_name: Optional[str] = Field(None)
-    certificate_id: Optional[str] = Field(None)
+    threat_name: Optional[str]
+    publisher_name: Optional[str]
+    certificate_id: Optional[str]
     identified_at: datetime = Field(..., description="When S1 first saw it")
     created_at: datetime = Field(..., description="When S1 created it")
 
     @field_validator("md5", "sha1", "sha256", mode="before")
     def _hex_to_bytes(cls, v: Any, info: ValidationInfo) -> Optional[bytes]:
-        """
-        If S1 gives us a hex string, decode it into raw bytes.
-        If it’s already bytes/bytearray, pass through. Otherwise error.
-        """
         if v is None:
             return None
         if isinstance(v, str):
@@ -83,21 +83,30 @@ class NoteModel(BaseModel):
 
 class LabelModel(BaseModel):
     threat_id: int = Field(..., gt=0)
-    verdict: Optional[str] = Field(None)
-    detection_type: Optional[str] = Field(None)
-    incident_status: Optional[str] = Field(None)
-    confidence_level: Optional[str] = Field(None)
-    classification: Optional[str] = Field(None)
-    classification_src: Optional[str] = Field(None)
-    initiated_by: Optional[str] = Field(None)
-    ingested_at: Optional[datetime] = Field(None)
+    verdict: Optional[str]
+    detection_type: Optional[str]
+    incident_status: Optional[str]
+    confidence_level: Optional[str]
+    classification: Optional[str]
+    classification_src: Optional[str]
+    initiated_by: Optional[str]
+    ingested_at: Optional[datetime]
+
+
+# ────────── NEW NORMALIZED MODELS ──────────
+class TacticModel(BaseModel):
+    name: str
+    source: str
+
+
+class TechniqueModel(BaseModel):
+    name: str
+    link: str
 
 
 class IndicatorModel(BaseModel):
     threat_id: int = Field(..., gt=0)
-    category: Optional[str] = Field(None)
-    description: Optional[str] = Field(None)
-    ids: Optional[List[int]] = Field(None)
-    tactics: Optional[List[str]] = Field(None)
-    techniques: Optional[Any] = Field(None)  # JSONB‐like
-
+    category: Optional[str]
+    description: Optional[str]
+    ids: Optional[List[int]]
+    tactics: Optional[List[TacticModel]]
