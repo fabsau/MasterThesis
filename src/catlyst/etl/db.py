@@ -34,7 +34,7 @@ from catlyst.etl.validation import (
     ThreatModel,
     LabelModel,
     NoteModel,
-    IndicatorModel,
+    # IndicatorModel, # "IndicatorModel" is not accessedPylance
     TacticModel,
     TechniqueModel,
 )
@@ -100,9 +100,12 @@ def upsert_endpoint(
     }
     try:
         endpoint = EndpointModel(**payload)
-        stmt = insert(endpoints).values(**endpoint.dict()).on_conflict_do_update(
-            index_elements=["endpoint_id"],
-            set_=attrs
+        # Create an update payload (excluding unique constraint columns) using model_dump()
+        update_payload = {k: v for k, v in endpoint.model_dump().items() if k not in ("tenant_id", "agent_uuid")}
+        # Use the unique constraint (tenant_id, agent_uuid) as the conflict target.
+        stmt = insert(endpoints).values(**endpoint.model_dump()).on_conflict_do_update(
+            index_elements=["tenant_id", "agent_uuid"],
+            set_=update_payload
         )
         db.execute(stmt)
         db.commit()
@@ -115,7 +118,11 @@ def upsert_threat(db: Session, t: Dict[str, Any]) -> None:
     rt = t.get("agentRealtimeInfo", {}) or {}
     payload = {
         "threat_id": int(ti.get("threatId") or 0),
+        "storyline": ti.get("storyline"),
         "tenant_id": int(det.get("accountId") or 0),
+        "incident_status": ti.get("incidentStatus"),
+        "analyst_verdict": ti.get("analystVerdict"),
+        "created_at": ti.get("createdAt"),
         "endpoint_id": int(rt.get("agentId") or 0) if rt.get("agentId") else None,
         "md5": ti.get("md5"),
         "sha1": ti.get("sha1"),
@@ -127,7 +134,7 @@ def upsert_threat(db: Session, t: Dict[str, Any]) -> None:
         "certificate_id": ti.get("certificateId"),
         "initiated_by": ti.get("initiatedBy"),
         "identified_at": ti.get("identifiedAt"),
-        "created_at": ti.get("createdAt"),
+        "last_updated_at": ti.get("updatedAt"),
     }
     try:
         threat = ThreatModel(**payload)
@@ -136,11 +143,15 @@ def upsert_threat(db: Session, t: Dict[str, Any]) -> None:
             set_={
                 "incident_status": insert(threats).excluded.incident_status,
                 "analyst_verdict": insert(threats).excluded.analyst_verdict,
-                "last_updated_at": insert(threats).excluded.created_at,
+                "initiated_by": insert(threats).excluded.initiated_by,
+                "last_updated_at": insert(threats).excluded.last_updated_at,
             }
         )
         db.execute(stmt)
         db.commit()
+        notes = t.get("notes")
+        if notes: # TODO needs to be tested!
+            insert_notes(db, payload["threat_id"], notes)
     except ValidationError as exc:
         logger.error("ThreatModel validation failed for threat_id=%s: %s", payload.get("threat_id"), exc)
     except Exception as e:
@@ -222,6 +233,7 @@ def batch_upsert_core(db: Session, all_threats: List[Dict[str, Any]], show_progr
         try:
             threat = ThreatModel(
                 threat_id=int(ti.get("threatId") or 0),
+                storyline=ti.get("storyline"),
                 tenant_id=tenant_id,
                 endpoint_id=endpoint_id,
                 md5=ti.get("md5"),
@@ -234,6 +246,7 @@ def batch_upsert_core(db: Session, all_threats: List[Dict[str, Any]], show_progr
                 certificate_id=ti.get("certificateId"),
                 identified_at=ti.get("identifiedAt"),
                 created_at=ti.get("createdAt"),
+                last_updated_at=ti.get("updatedAt"),
             )
             threats_payload[int(ti.get("threatId") or 0)] = threat.dict()
         except ValidationError as exc:
@@ -379,13 +392,16 @@ def batch_upsert_dependents(db: Session, all_threats: List[Dict[str, Any]], show
         for ev in t.get("deepvis", []):
             try:
                 db.execute(
-                    insert(deepvis_events)
+                    pg_insert(deepvis_events)
                     .values(
                         threat_id=threat_id,
                         event_time=ev.get("eventTime"),
                         event_type=ev.get("eventType"),
                         event_cat=ev.get("eventCategory"),
                         severity=ev.get("severity"),
+                    )
+                    .on_conflict_do_nothing(
+                        index_elements=["threat_id", "event_time", "event_type"]
                     )
                 )
             except Exception as e:

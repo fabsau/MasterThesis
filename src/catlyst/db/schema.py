@@ -33,7 +33,7 @@ tenants = Table(
     Column("tenant_id", BigInteger, primary_key=True),
     Column("name", Text, nullable=False),
     Column("ingested_at", TIMESTAMP(timezone=True),
-           nullable=False, server_default="now()"),
+           nullable=False, server_default=func.now()),
 )
 
 endpoints = Table(
@@ -55,7 +55,7 @@ endpoints = Table(
     Column("scan_started_at", TIMESTAMP(timezone=True)),
     Column("scan_finished_at", TIMESTAMP(timezone=True)),
     Column("ingested_at", TIMESTAMP(timezone=True),
-           nullable=False, server_default="now()"),
+           nullable=False, server_default=func.now()),
     UniqueConstraint("tenant_id", "agent_uuid", name="uq_endpoint_tenant_uuid"),
     Index("ix_endpoints_tenant", "tenant_id"),
 )
@@ -67,6 +67,9 @@ threats = Table(
     Column("tenant_id", BigInteger,
            ForeignKey("tenants.tenant_id", ondelete="CASCADE"),
            nullable=False),
+    Column("incident_status", incident_status_enum),
+    Column("analyst_verdict", analyst_verdict_enum),
+    Column("created_at", TIMESTAMP(timezone=True), nullable=False),
     Column("endpoint_id", BigInteger,
            ForeignKey("endpoints.endpoint_id", ondelete="SET NULL")),
     Column("md5", BYTEA),
@@ -77,10 +80,10 @@ threats = Table(
     Column("threat_name", Text),
     Column("publisher_name", Text),
     Column("certificate_id", Text),
+    Column("initiated_by", Text),
     Column("identified_at", TIMESTAMP(timezone=True), nullable=False),
-    Column("created_at", TIMESTAMP(timezone=True), nullable=False),
     Column("ingested_at", TIMESTAMP(timezone=True),
-           nullable=False, server_default="now()"),
+           nullable=False, server_default=func.now()),
     Column("last_updated_at", TIMESTAMP(timezone=True),
            nullable=False, server_default=func.now()),
     UniqueConstraint("tenant_id", "sha256", "identified_at",
@@ -99,7 +102,7 @@ threat_notes = Table(
            nullable=False),
     Column("note", Text, nullable=False),
     Column("ingested_at", TIMESTAMP(timezone=True),
-           nullable=False, server_default="now()"),
+           nullable=False, server_default=func.now()),
     Index("ix_notes_threat", "threat_id"),
 )
 
@@ -114,10 +117,10 @@ threat_labels = Table(
     Column("detection_type", detection_type_enum),
     Column("confidence_level", Text),
     Column("classification", Text),
-    Column("classification_src", Text),
+    Column("classificationSource", Text),
     Column("initiated_by", Text),
     Column("ingested_at", TIMESTAMP(timezone=True),
-           nullable=False, server_default="now()"),
+           nullable=False, server_default=func.now()),
     Index("ix_labels_threat", "threat_id"),
     Index("ix_labels_verdict", "verdict"),
 )
@@ -132,11 +135,10 @@ threat_indicators = Table(
     Column("description", Text),
     Column("ids", ARRAY(Integer)),
     Column("ingested_at", TIMESTAMP(timezone=True),
-           nullable=False, server_default="now()"),
+           nullable=False, server_default=func.now()),
     Index("ix_indicators_threat", "threat_id"),
     Index("ix_indicators_ids", "ids", postgresql_using="gin"),
 )
-
 
 indicator_tactics = Table(
     "indicator_tactics", metadata,
@@ -171,7 +173,8 @@ deepvis_events = Table(
     Column("event_cat", Text),
     Column("severity", Integer),
     Column("ingested_at", TIMESTAMP(timezone=True),
-           nullable=False, server_default="now()"),
+           nullable=False, server_default=func.now()),
+    UniqueConstraint("threat_id", "event_time", "event_type", name="uq_deepvis_event"),
     Index("ix_dv_threat_time", "threat_id", "event_time"),
     Index("ix_dv_event_type", "event_type"),
 )
@@ -183,9 +186,10 @@ model_runs = Table(
     Column("description", Text),
     Column("featureset", Text),
     Column("trained_at", TIMESTAMP(timezone=True),
-           nullable=False, server_default="now()"),
+           nullable=False, server_default=func.now()),
     Column("metrics", JSONB),
 )
+
 model_run_rows = Table(
     "model_run_rows", metadata,
     Column("model_run_id", BigInteger,
@@ -223,7 +227,7 @@ __all__ = [
     "metadata",
     "detection_type_enum", "incident_status_enum", "analyst_verdict_enum",
     "tenants", "endpoints", "threats", "threat_notes", "threat_labels",
-    "threat_matches", "threat_indicators", "deepvis_events",
+    "threat_indicators", "deepvis_events",
     "model_runs", "model_run_rows", "model_run_columns",
     "indicator_tactics", "tactic_techniques",
 ]

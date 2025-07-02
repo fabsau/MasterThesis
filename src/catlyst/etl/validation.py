@@ -47,20 +47,21 @@ class EndpointModel(BaseModel):
 
 class ThreatModel(BaseModel):
     threat_id: int = Field(..., gt=0)
-    storyline: Optional[str]
-    tenant_id: int = Field(..., gt=0)
-    endpoint_id: Optional[int]
-
-    md5: Optional[bytes]
-    sha1: Optional[bytes]
-    sha256: Optional[bytes]
-    file_path: Optional[str]
+    storyline: Optional[str] = None
+    tenant_id: int = Field(..., gt=0, description="Tenant identifier")
+    endpoint_id: Optional[int] = None
+    md5: Optional[bytes] = None
+    sha1: Optional[bytes] = None
+    sha256: Optional[bytes] = None
+    file_path: Optional[str] = None
     file_size: Optional[int] = Field(None, ge=0)
-    threat_name: Optional[str]
-    publisher_name: Optional[str]
-    certificate_id: Optional[str]
+    threat_name: Optional[str] = None
+    publisher_name: Optional[str] = None
+    certificate_id: Optional[str] = None
+    initiated_by: Optional[str] = None
     identified_at: datetime = Field(..., description="When S1 first saw it")
     created_at: datetime = Field(..., description="When S1 created it")
+    last_updated_at: Optional[datetime] = None
 
     @field_validator("md5", "sha1", "sha256", mode="before")
     def _hex_to_bytes(cls, v: Any, info: ValidationInfo) -> Optional[bytes]:
@@ -80,6 +81,15 @@ class NoteModel(BaseModel):
     threat_id: int = Field(..., gt=0)
     note: str = Field(..., min_length=1)
 
+class TacticModel(BaseModel):
+    name: str
+    source: str
+    techniques: Optional[List["TechniqueModel"]] = None
+
+
+class TechniqueModel(BaseModel):
+    name: str
+    link: str
 
 class LabelModel(BaseModel):
     threat_id: int = Field(..., gt=0)
@@ -88,25 +98,17 @@ class LabelModel(BaseModel):
     incident_status: Optional[str]
     confidence_level: Optional[str]
     classification: Optional[str]
-    classification_src: Optional[str]
+    classificationSource: Optional[str]
     initiated_by: Optional[str]
     ingested_at: Optional[datetime]
 
 
-# ────────── NEW NORMALIZED MODELS ──────────
-class TacticModel(BaseModel):
-    name: str
-    source: str
-
-
-class TechniqueModel(BaseModel):
-    name: str
-    link: str
-
-
 class IndicatorModel(BaseModel):
     threat_id: int = Field(..., gt=0)
-    category: Optional[str]
-    description: Optional[str]
-    ids: Optional[List[int]]
-    tactics: Optional[List[TacticModel]]
+    category: Optional[str] = None
+    description: Optional[str] = None
+    ids: Optional[List[int]] = None
+    tactics: Optional[List[TacticModel]] = None 
+
+# Resolve forward references for TacticModel (and any other models if necessary)
+TacticModel.model_rebuild()
