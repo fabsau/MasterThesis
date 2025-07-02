@@ -86,6 +86,8 @@ threats = Table(
     UniqueConstraint("tenant_id", "sha256", "identified_at",
                      name="uq_threat_unique"),
     Index("ix_threats_sha256", "sha256"),
+    Index("ix_threats_sha1", "sha1"),
+    Index("ix_threats_md5", "md5"),
     Index("ix_threats_tenant_date", "tenant_id", "identified_at"),
 )
 
@@ -120,23 +122,6 @@ threat_labels = Table(
     Index("ix_labels_verdict", "verdict"),
 )
 
-threat_matches = Table(
-    "threat_matches", metadata,
-    Column("id", BigInteger, primary_key=True, autoincrement=True),
-    Column("threat_id", BigInteger,
-           ForeignKey("threats.threat_id", ondelete="CASCADE"),
-           nullable=False),
-    Column("matched_threat_id", BigInteger,
-           ForeignKey("threats.threat_id", ondelete="CASCADE"),
-           nullable=False),
-    Column("similarity_score", REAL, nullable=False),
-    Column("matched_at", TIMESTAMP(timezone=True),
-           nullable=False, server_default="now()"),
-    UniqueConstraint("threat_id", "matched_threat_id",
-                     name="uq_threat_match_pair"),
-    Index("ix_threat_matches_threat", "threat_id"),
-)
-
 threat_indicators = Table(
     "threat_indicators", metadata,
     Column("indicator_id", BigInteger, primary_key=True, autoincrement=True),
@@ -146,12 +131,33 @@ threat_indicators = Table(
     Column("category", Text),
     Column("description", Text),
     Column("ids", ARRAY(Integer)),
-    Column("tactics", JSONB),     # full nested blob
-    Column("techniques", JSONB),  # keep for raw if desired
     Column("ingested_at", TIMESTAMP(timezone=True),
            nullable=False, server_default="now()"),
     Index("ix_indicators_threat", "threat_id"),
     Index("ix_indicators_ids", "ids", postgresql_using="gin"),
+)
+
+
+indicator_tactics = Table(
+    "indicator_tactics", metadata,
+    Column("tactic_id", BigInteger, primary_key=True, autoincrement=True),
+    Column("indicator_id", BigInteger,
+           ForeignKey("threat_indicators.indicator_id", ondelete="CASCADE"),
+           nullable=False),
+    Column("name", Text, nullable=False),
+    Column("source", Text, nullable=False),
+    Index("ix_tactics_indicator", "indicator_id"),
+)
+
+tactic_techniques = Table(
+    "tactic_techniques", metadata,
+    Column("technique_id", BigInteger, primary_key=True, autoincrement=True),
+    Column("tactic_id", BigInteger,
+           ForeignKey("indicator_tactics.tactic_id", ondelete="CASCADE"),
+           nullable=False),
+    Column("name", Text, nullable=False),
+    Column("link", Text, nullable=False),
+    Index("ix_techniques_tactic", "tactic_id"),
 )
 
 deepvis_events = Table(
@@ -196,30 +202,6 @@ model_run_columns = Table(
            primary_key=True),
     Column("column_name", Text, primary_key=True),
 )
-
-# ────────── NEW NORMALIZED TABLES ──────────
-indicator_tactics = Table(
-    "indicator_tactics", metadata,
-    Column("tactic_id", BigInteger, primary_key=True, autoincrement=True),
-    Column("indicator_id", BigInteger,
-           ForeignKey("threat_indicators.indicator_id", ondelete="CASCADE"),
-           nullable=False),
-    Column("name", Text, nullable=False),
-    Column("source", Text, nullable=False),
-    Index("ix_tactics_indicator", "indicator_id"),
-)
-
-tactic_techniques = Table(
-    "tactic_techniques", metadata,
-    Column("technique_id", BigInteger, primary_key=True, autoincrement=True),
-    Column("tactic_id", BigInteger,
-           ForeignKey("indicator_tactics.tactic_id", ondelete="CASCADE"),
-           nullable=False),
-    Column("name", Text, nullable=False),
-    Column("link", Text, nullable=False),
-    Index("ix_techniques_tactic", "tactic_id"),
-)
-
 # Trigger for last_updated_at on threats table
 from sqlalchemy import DDL, event
 
