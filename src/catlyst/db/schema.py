@@ -12,7 +12,7 @@ metadata = MetaData()
 
 #
 # ========== ENUM TYPES ==========
-#
+
 detection_type_enum = ENUM(
     'static', 'dynamic', name='detection_type', metadata=metadata
 )
@@ -27,7 +27,7 @@ analyst_verdict_enum = ENUM(
 
 #
 #  CORE TABLES
-#
+
 tenants = Table(
     "tenants", metadata,
     Column("tenant_id", BigInteger, primary_key=True),
@@ -60,6 +60,7 @@ endpoints = Table(
     Index("ix_endpoints_tenant", "tenant_id"),
 )
 
+# Merged fields from former threat_labels into threats
 threats = Table(
     "threats", metadata,
     Column("threat_id", BigInteger, primary_key=True),
@@ -69,6 +70,10 @@ threats = Table(
            nullable=False),
     Column("incident_status", incident_status_enum),
     Column("analyst_verdict", analyst_verdict_enum),
+    Column("detection_type", detection_type_enum),
+    Column("confidence_level", Text),
+    Column("classification", Text),
+    Column("classification_source", Text),
     Column("created_at", TIMESTAMP(timezone=True), nullable=False),
     Column("endpoint_id", BigInteger,
            ForeignKey("endpoints.endpoint_id", ondelete="SET NULL")),
@@ -104,25 +109,6 @@ threat_notes = Table(
     Column("ingested_at", TIMESTAMP(timezone=True),
            nullable=False, server_default=func.now()),
     Index("ix_notes_threat", "threat_id"),
-)
-
-threat_labels = Table(
-    "threat_labels", metadata,
-    Column("label_id", BigInteger, primary_key=True, autoincrement=True),
-    Column("threat_id", BigInteger,
-           ForeignKey("threats.threat_id", ondelete="CASCADE"),
-           nullable=False),
-    Column("verdict", analyst_verdict_enum, nullable=False, server_default=text("'undefined'")),
-    Column("incident_status", incident_status_enum),
-    Column("detection_type", detection_type_enum),
-    Column("confidence_level", Text),
-    Column("classification", Text),
-    Column("classificationSource", Text),
-    Column("initiated_by", Text),
-    Column("ingested_at", TIMESTAMP(timezone=True),
-           nullable=False, server_default=func.now()),
-    Index("ix_labels_threat", "threat_id"),
-    Index("ix_labels_verdict", "verdict"),
 )
 
 threat_indicators = Table(
@@ -199,6 +185,7 @@ model_run_rows = Table(
            ForeignKey("threats.threat_id", ondelete="CASCADE"),
            primary_key=True),
 )
+
 model_run_columns = Table(
     "model_run_columns", metadata,
     Column("model_run_id", BigInteger,
@@ -206,6 +193,7 @@ model_run_columns = Table(
            primary_key=True),
     Column("column_name", Text, primary_key=True),
 )
+
 # Trigger for last_updated_at on threats table
 from sqlalchemy import DDL, event
 
@@ -226,7 +214,7 @@ event.listen(metadata, "after_create", ddl_last_updated)
 __all__ = [
     "metadata",
     "detection_type_enum", "incident_status_enum", "analyst_verdict_enum",
-    "tenants", "endpoints", "threats", "threat_notes", "threat_labels",
+    "tenants", "endpoints", "threats", "threat_notes",
     "threat_indicators", "deepvis_events",
     "model_runs", "model_run_rows", "model_run_columns",
     "indicator_tactics", "tactic_techniques",

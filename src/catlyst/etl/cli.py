@@ -1,5 +1,3 @@
-# src/catlyst/etl/cli.py
-
 import sys
 import logging
 import argparse
@@ -110,19 +108,46 @@ def main():
         )
         since_iso = compute_since_iso(args.since_days)
         verdicts = [v.strip() for v in args.verdicts.split(",")]
+
         LOG.info("🔄 ETL starting – since_days=%d → %s", args.since_days, since_iso)
+
+        # Stage 1: Fetch threats
         threats = list(client.fetch_all_threats(since_iso, verdicts, show_progress=not args.no_progress))
         LOG.info("→ %d threats fetched", len(threats))
-        LOG.info("Stage 2: Bulk upsert core objects")
+
+        # Stage 2: Fetch notes for each threat
+        LOG.info("Stage 2: Fetching notes for each threat")
+        for t in threats:
+            tid = t.get("id") or t.get("threatInfo", {}).get("threatId")
+            t["notes"] = client.fetch_notes(tid)
+
+        # Stage 3: Map deep visibility events
+        LOG.info("Stage 3: Mapping deep visibility events")
+        for t in threats:
+            dv = []
+            for ev in t.get("deepVisibilityEvents", []):
+                dv.append({
+                    "eventTime": ev.get("event.time"),
+                    "eventType": ev.get("event.type"),
+                    "eventCategory": ev.get("event.category"),
+                    "severity": ev.get("severity"),
+                })
+            t["deepvis"] = dv
+
+        # Stage 4: Bulk upsert core objects
+        LOG.info("Stage 4: Bulk upsert core objects")
         with SessionLocal() as db:
             LOG.debug("Upserting core objects into DB")
             ingest.batch_upsert_core(db, threats, show_progress=not args.no_progress)
             LOG.debug("Completed upsert of core objects")
-        LOG.info("Stage 3: Bulk insert dependent objects")
+
+        # Stage 5: Bulk insert dependent objects
+        LOG.info("Stage 5: Bulk insert dependent objects")
         with SessionLocal() as db:
             LOG.debug("Upserting dependent objects into DB")
             ingest.batch_upsert_dependents(db, threats, show_progress=not args.no_progress)
             LOG.debug("Completed upsert of dependent objects")
+
         LOG.info("✅ ETL completed successfully")
     except Exception as exc:
         msg = str(exc)[:200]

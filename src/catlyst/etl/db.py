@@ -13,7 +13,7 @@ import logging
 from typing import Any, Dict, List
 from pydantic import ValidationError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy import insert
+from sqlalchemy import insert as sql_insert
 from sqlalchemy.orm import Session
 from tqdm import tqdm
 
@@ -21,7 +21,6 @@ from catlyst.db.schema import (
     tenants,
     endpoints,
     threats,
-    threat_labels,
     threat_indicators,
     threat_notes,
     deepvis_events,
@@ -32,7 +31,6 @@ from catlyst.etl.validation import (
     TenantModel,
     EndpointModel,
     ThreatModel,
-    LabelModel,
     NoteModel,
     # IndicatorModel, # "IndicatorModel" is not accessedPylance
     TacticModel,
@@ -67,7 +65,7 @@ def _bulk_upsert_with_fallback(
                 pk = list(table.primary_key.columns)[0].name
                 for rec in chunk:
                     try:
-                        stmt = insert(table).values(**rec)
+                        stmt = sql_insert(table).values(**rec)
                         db.execute(stmt)
                         db.commit()
                     except Exception as rec_exc:
@@ -79,7 +77,7 @@ def _bulk_upsert_with_fallback(
 def upsert_tenant(db: Session, account_id: int, account_name: str) -> None:
     try:
         tenant = TenantModel(tenant_id=account_id, name=account_name)
-        stmt = insert(tenants).values(**tenant.dict()).on_conflict_do_nothing()
+        stmt = pg_insert(tenants).values(**tenant.dict()).on_conflict_do_nothing()
         db.execute(stmt)
         db.commit()
     except ValidationError as exc:
@@ -103,7 +101,7 @@ def upsert_endpoint(
         # Create an update payload (excluding unique constraint columns) using model_dump()
         update_payload = {k: v for k, v in endpoint.model_dump().items() if k not in ("tenant_id", "agent_uuid")}
         # Use the unique constraint (tenant_id, agent_uuid) as the conflict target.
-        stmt = insert(endpoints).values(**endpoint.model_dump()).on_conflict_do_update(
+        stmt = pg_insert(endpoints).values(**endpoint.model_dump()).on_conflict_do_update(
             index_elements=["tenant_id", "agent_uuid"],
             set_=update_payload
         )
@@ -122,6 +120,10 @@ def upsert_threat(db: Session, t: Dict[str, Any]) -> None:
         "tenant_id": int(det.get("accountId") or 0),
         "incident_status": ti.get("incidentStatus"),
         "analyst_verdict": ti.get("analystVerdict"),
+        "detection_type": ti.get("detectionType"),
+        "confidence_level": ti.get("confidenceLevel"),
+        "classification": ti.get("classification"),
+        "classification_source": ti.get("classificationSource"),
         "created_at": ti.get("createdAt"),
         "endpoint_id": int(rt.get("agentId") or 0) if rt.get("agentId") else None,
         "md5": ti.get("md5"),
@@ -138,20 +140,21 @@ def upsert_threat(db: Session, t: Dict[str, Any]) -> None:
     }
     try:
         threat = ThreatModel(**payload)
-        stmt = insert(threats).values(**threat.dict()).on_conflict_do_update(
+        stmt = pg_insert(threats).values(**threat.dict()).on_conflict_do_update(
             index_elements=["threat_id"],
             set_={
-                "incident_status": insert(threats).excluded.incident_status,
-                "analyst_verdict": insert(threats).excluded.analyst_verdict,
-                "initiated_by": insert(threats).excluded.initiated_by,
-                "last_updated_at": insert(threats).excluded.last_updated_at,
+                "incident_status": pg_insert(threats).excluded.incident_status,
+                "analyst_verdict": pg_insert(threats).excluded.analyst_verdict,
+                "detection_type": pg_insert(threats).excluded.detection_type,
+                "confidence_level": pg_insert(threats).excluded.confidence_level,
+                "classification": pg_insert(threats).excluded.classification,
+                "classification_source": pg_insert(threats).excluded.classification_source,
+                "initiated_by": pg_insert(threats).excluded.initiated_by,
+                "last_updated_at": pg_insert(threats).excluded.last_updated_at,
             }
         )
         db.execute(stmt)
         db.commit()
-        notes = t.get("notes")
-        if notes: # TODO needs to be tested!
-            insert_notes(db, payload["threat_id"], notes)
     except ValidationError as exc:
         logger.error("ThreatModel validation failed for threat_id=%s: %s", payload.get("threat_id"), exc)
     except Exception as e:
@@ -162,7 +165,7 @@ def insert_notes(db: Session, threat_id: int, notes: List[str]) -> None:
     for text in notes or []:
         try:
             note = NoteModel(threat_id=threat_id, note=text)
-            stmt = insert(threat_notes).values(**note.dict()).on_conflict_do_nothing()
+            stmt = pg_insert(threat_notes).values(**note.dict()).on_conflict_do_nothing()
             db.execute(stmt)
         except ValidationError as exc:
             logger.warning("Skipping invalid note (threat=%s): %s", threat_id, exc)
@@ -170,19 +173,7 @@ def insert_notes(db: Session, threat_id: int, notes: List[str]) -> None:
             logger.error("Error inserting note for threat %s: %s", threat_id, e)
     db.commit()
 
-def insert_labels(db: Session, threat_id: int, verdict: str) -> None:
-    if not verdict:
-        return
-    try:
-        label = LabelModel(threat_id=threat_id, verdict=verdict)
-        stmt = insert(threat_labels).values(**label.dict()).on_conflict_do_nothing()
-        db.execute(stmt)
-        db.commit()
-    except ValidationError as exc:
-        logger.warning("Skipping invalid label (threat=%s): %s", threat_id, exc)
-    except Exception as e:
-        db.rollback()
-        logger.error("Error inserting label for threat %s: %s", threat_id, e)
+# Removed label insertion; labels now merged into threats table
 
 def batch_upsert_core(db: Session, all_threats: List[Dict[str, Any]], show_progress: bool = True) -> None:
     """
@@ -304,7 +295,7 @@ def insert_indicators_normalized(
         }
         try:
             res = db.execute(
-                insert(threat_indicators)
+                pg_insert(threat_indicators)
                 .values(**payload)
                 .on_conflict_do_nothing()
                 .returning(threat_indicators.c.indicator_id)
@@ -330,7 +321,7 @@ def insert_indicators_normalized(
 
             try:
                 res2 = db.execute(
-                    insert(indicator_tactics)
+                sql_insert(indicator_tactics)
                     .values(
                         indicator_id=indicator_id,
                         name=tac.name,
@@ -354,7 +345,7 @@ def insert_indicators_normalized(
                     continue
                 try:
                     db.execute(
-                        insert(tactic_techniques)
+                        sql_insert(tactic_techniques)
                         .values(
                             tactic_id=tactic_id,
                             name=techm.name,
@@ -376,11 +367,9 @@ def batch_upsert_dependents(db: Session, all_threats: List[Dict[str, Any]], show
         threat_id = int(ti.get("threatId") or 0)
         if not threat_id:
             continue
+        upsert_threat(db, t)
 
-        # Process label from analyst verdict
-        verdict = (ti.get("analystVerdict") or "").strip()
-        if verdict:
-            insert_labels(db, threat_id, verdict)
+        # Labels are merged into threats table; no separate insert_labels call
 
         # Process notes
         insert_notes(db, threat_id, t.get("notes", []))

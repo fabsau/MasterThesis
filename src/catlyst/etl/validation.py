@@ -30,6 +30,13 @@ class EndpointModel(BaseModel):
     os_revision: Optional[str] = None
     ip_v4: Optional[str] = None
     ip_v6: Optional[str] = None
+    # insert validator to pick first IP if comma-separated
+    @validator("ip_v4", "ip_v6", pre=True)
+    def normalize_ip(cls, v):
+        if v and isinstance(v, str) and "," in v:
+            return v.split(",")[0].strip()
+        return v
+
     group_id: Optional[int] = Field(None, ge=0)
     site_id: Optional[int] = Field(None, ge=0)
     agent_version: Optional[str] = None
@@ -59,6 +66,12 @@ class ThreatModel(BaseModel):
     publisher_name: Optional[str] = None
     certificate_id: Optional[str] = None
     initiated_by: Optional[str] = None
+    incident_status: Optional[str] = None
+    analyst_verdict: Optional[str] = None
+    detection_type: Optional[str] = None
+    confidence_level: Optional[str] = None
+    classification: Optional[str] = None
+    classification_source: Optional[str] = None
     identified_at: datetime = Field(..., description="When S1 first saw it")
     created_at: datetime = Field(..., description="When S1 created it")
     last_updated_at: Optional[datetime] = None
@@ -93,14 +106,14 @@ class TechniqueModel(BaseModel):
 
 class LabelModel(BaseModel):
     threat_id: int = Field(..., gt=0)
-    verdict: Optional[str]
-    detection_type: Optional[str]
-    incident_status: Optional[str]
-    confidence_level: Optional[str]
-    classification: Optional[str]
-    classificationSource: Optional[str]
-    initiated_by: Optional[str]
-    ingested_at: Optional[datetime]
+    verdict: Optional[str] = None
+    detection_type: Optional[str] = None
+    incident_status: Optional[str] = None
+    confidence_level: Optional[str] = None
+    classification: Optional[str] = None
+    classificationSource: Optional[str] = None
+    initiated_by: Optional[str] = None
+    ingested_at: Optional[datetime] = Field(default_factory=utcnow)
 
 
 class IndicatorModel(BaseModel):
