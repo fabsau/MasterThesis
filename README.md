@@ -42,7 +42,9 @@ That should eliminate the path warnings, install all required packages, and let 
 
 python -c "import nltk; nltk.download('stopwords')"
 poetry config virtualenvs.in-project true
-
-pip install poetry
+scoop install python
+scoop install pipx
+pipx install poetry
+poetry env use python
 poetry install
 alembic init alembic
