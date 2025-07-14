@@ -124,8 +124,8 @@ def main():
         # Stage 3: Fetching and mapping deep visibility events
         LOG.info("Stage 3: Fetching and mapping deep visibility events")
         # Build columns clause for DV queries from deepvis settings
-        dv_cfg = get_settings().deepvis
-        deepvis_cols = f" | project {','.join(dv_cfg.columns)} | sort {dv_cfg.sort}"
+
+        deepvis_cols = " | columns event.time,event.type"
         for t in threats:
             tid = t.get("id") or t.get("threatInfo", {}).get("threatId")
             try:
