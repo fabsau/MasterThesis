@@ -121,18 +121,28 @@ def main():
             tid = t.get("id") or t.get("threatInfo", {}).get("threatId")
             t["notes"] = client.fetch_notes(tid)
 
-        # Stage 3: Map deep visibility events
-        LOG.info("Stage 3: Mapping deep visibility events")
+        # Stage 3: Fetching and mapping deep visibility events
+        LOG.info("Stage 3: Fetching and mapping deep visibility events")
+        # Build columns clause for DV queries from deepvis settings
+        dv_cfg = get_settings().deepvis
+        deepvis_cols = f" | project {','.join(dv_cfg.columns)} | sort {dv_cfg.sort}"
         for t in threats:
-            dv = []
-            for ev in t.get("deepVisibilityEvents", []):
-                dv.append({
+            tid = t.get("id") or t.get("threatInfo", {}).get("threatId")
+            try:
+                dv_raw = client.fetch_deepvis(t, deepvis_cols)
+            except Exception:
+                LOG.exception("Error fetching DeepVis for threat %s", tid)
+                dv_raw = []
+            LOG.debug("Fetched %d DeepVis events for threat %s", len(dv_raw), tid)
+            mapped = []
+            for ev in dv_raw:
+                mapped.append({
                     "eventTime": ev.get("event.time"),
                     "eventType": ev.get("event.type"),
                     "eventCategory": ev.get("event.category"),
                     "severity": ev.get("severity"),
                 })
-            t["deepvis"] = dv
+            t["deepvis"] = mapped
 
         # Stage 4: Bulk upsert core objects
         LOG.info("Stage 4: Bulk upsert core objects")

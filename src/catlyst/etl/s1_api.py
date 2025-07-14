@@ -153,6 +153,7 @@ class SentinelOneAPI:
                       threat:      Dict[str,Any],
                       cols_clause: str
                      ) -> List[Dict[str,Any]]:
+        LOG.debug("Starting fetch_deepvis for threat %s with cols_clause=%s", threat.get("id", "unknown"), cols_clause)
         thinfo = threat.get("threatInfo", {}) or {}
         created = thinfo.get("createdAt")
         if not created:
@@ -170,17 +171,19 @@ class SentinelOneAPI:
             LOG.debug("Skipping DV; threat ID: %s older than lookback", threat.get("id", "unknown"))
             return []
 
-        start = dt - timedelta(minutes=5)
-        end   = dt + timedelta(hours=1)
+        start = dt - timedelta(minutes=1)
+        end   = dt + timedelta(minutes=1)
         query_core = self._build_query_core(threat)
         if not query_core:
             LOG.debug("Skipping DV; no valid query core for threat ID: %s", threat.get("id", "unknown"))
             return []
 
+        # Build full DeepVis query from clauses and additional fields/sort
+        full_query = "filter " + query_core + cols_clause
         body = {
-            "query":    query_core + cols_clause,
-            "fromDate": start.isoformat(timespec="milliseconds")+"Z",
-            "toDate":   end  .isoformat(timespec="milliseconds")+"Z",
+            "query": full_query,
+            "fromDate": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "toDate":   end.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "limit":    self.page_limit,
         }
         det = threat.get("agentDetectionInfo", {}) or {}
@@ -194,6 +197,9 @@ class SentinelOneAPI:
         r = self.session.post(pq_url, json=body,
                               verify=self.verify_ssl,
                               timeout=self.dv_timeout)
+        if r.status_code == 400:
+            LOG.warning("DV PQ bad request for threat %s: %s", threat.get("id", "unknown"), r.text)
+            return []
         r.raise_for_status()
         report_id = r.json().get("data",{}).get("reportId")
         if not report_id:
@@ -217,7 +223,9 @@ class SentinelOneAPI:
                                verify=self.verify_ssl,
                                timeout=self.dv_timeout)
         out.raise_for_status()
-        return out.json()
+        events = out.json()
+        LOG.debug("fetch_deepvis returning %d events for threat %s", len(events), threat.get("id", "unknown"))
+        return events
 
     def _build_query_core(self, threat: Dict[str,Any]) -> str:
         ti     = threat.get("threatInfo", {}) or {}
