@@ -70,4 +70,6 @@ DEEPVIS_COLUMN_MAPPINGS = [
     ("eventLoginType", "event.login.type"),
 ]
 
-DEEPVIS_SORT_CLAUSE = " | sort by event.time desc"
+
+# DEEPVIS_SORT_CLAUSE = " | sort by event.time desc"
+DEEPVIS_SORT_CLAUSE = ""
