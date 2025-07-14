@@ -124,8 +124,14 @@ def main():
         # Stage 3: Fetching and mapping deep visibility events
         LOG.info("Stage 3: Fetching and mapping deep visibility events")
         # Build columns clause for DV queries from deepvis settings
+        from catlyst.config import DEEPVIS_COLUMN_MAPPINGS, DEEPVIS_SORT_CLAUSE
 
-        deepvis_cols = " | columns event.time,event.type"
+        # Build the columns clause dynamically
+        columns_expr = ", ".join(
+            f"{out} = {src}" for out, src in DEEPVIS_COLUMN_MAPPINGS
+        )
+        deepvis_cols = f" | columns {columns_expr}{DEEPVIS_SORT_CLAUSE}"
+
         for t in threats:
             tid = t.get("id") or t.get("threatInfo", {}).get("threatId")
             try:
@@ -137,10 +143,8 @@ def main():
             mapped = []
             for ev in dv_raw:
                 mapped.append({
-                    "eventTime": ev.get("event.time"),
-                    "eventType": ev.get("event.type"),
-                    "eventCategory": ev.get("event.category"),
-                    "severity": ev.get("severity"),
+                    out: ev.get(src)
+                    for out, src in DEEPVIS_COLUMN_MAPPINGS
                 })
             t["deepvis"] = mapped
 

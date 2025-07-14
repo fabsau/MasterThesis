@@ -2,6 +2,7 @@
 
 import time
 import logging
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, Dict, Any, List
 from tqdm import tqdm
@@ -153,11 +154,13 @@ class SentinelOneAPI:
                       threat:      Dict[str,Any],
                       cols_clause: str
                      ) -> List[Dict[str,Any]]:
+        LOG.info("==== DeepVis fetch for threat_id=%s ====", threat.get("id", "unknown"))
         LOG.debug("Starting fetch_deepvis for threat %s with cols_clause=%s", threat.get("id", "unknown"), cols_clause)
         thinfo = threat.get("threatInfo", {}) or {}
         created = thinfo.get("createdAt")
+        LOG.info("Threat info: id=%s, createdAt=%s", threat.get("id", "unknown"), created)
         if not created:
-            LOG.debug("Skipping DV; no createdAt for threat ID: %s", threat.get("id", "unknown"))
+            LOG.warning("Skipping DV; no createdAt for threat ID: %s", threat.get("id", "unknown"))
             return []
 
         try:
@@ -173,13 +176,15 @@ class SentinelOneAPI:
 
         start = dt - timedelta(minutes=1)
         end   = dt + timedelta(minutes=1)
+        LOG.debug("DeepVis time window: %s to %s", start, end)
         query_core = self._build_query_core(threat)
+        LOG.debug("DeepVis query core: %s", query_core)
         if not query_core:
-            LOG.debug("Skipping DV; no valid query core for threat ID: %s", threat.get("id", "unknown"))
+            LOG.warning("Skipping DV; no valid query core for threat ID: %s", threat.get("id", "unknown"))
             return []
 
         # Build full DeepVis query from clauses and additional fields/sort
-        full_query = "filter " + query_core + cols_clause
+        full_query = query_core + cols_clause
         body = {
             "query": full_query,
             "fromDate": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -187,45 +192,63 @@ class SentinelOneAPI:
             "limit":    self.page_limit,
         }
         det = threat.get("agentDetectionInfo", {}) or {}
-        if det.get("siteId"):    body["siteIds"]    = [det["siteId"]]
-        if det.get("accountId"): body["accountIds"] = [det["accountId"]]
+        # if det.get("siteId"):    body["siteIds"]    = [det["siteId"]]
+        # if det.get("accountId"): body["accountIds"] = [det["accountId"]]
+        LOG.debug("DeepVis PQ body: %s", json.dumps(body))
 
         pq_url   = f"{self.api_prefix}/dv/events/pq"
         ping_url = f"{self.api_prefix}/dv/events/pq-ping"
 
-        # submit
+        # submit PQ
         r = self.session.post(pq_url, json=body,
                               verify=self.verify_ssl,
                               timeout=self.dv_timeout)
+        LOG.debug("DeepVis PQ POST status: %s", r.status_code)
         if r.status_code == 400:
             LOG.warning("DV PQ bad request for threat %s: %s", threat.get("id", "unknown"), r.text)
             return []
         r.raise_for_status()
-        report_id = r.json().get("data",{}).get("reportId")
-        if not report_id:
-            LOG.error("DV PQ returned no reportId")
+        resp_json = r.json()
+        LOG.debug("DeepVis PQ POST response: %s", resp_json)
+        pq_data = resp_json.get("data", {})
+        query_id = pq_data.get("queryId")
+        status = pq_data.get("status") or pq_data.get("progress")
+        LOG.info("PQ started id=%s status=%s", query_id, status)
+        if not query_id:
+            LOG.error("DV PQ returned no queryId")
             return []
 
         # poll
-        while True:
-            p = self.session.get(f"{ping_url}/{report_id}",
-                                  verify=self.verify_ssl,
-                                  timeout=self.dv_timeout)
-            p.raise_for_status()
-            st = p.json().get("status")
-            if   st=="completed": break
-            elif st=="failed":
-                raise RuntimeError("DV PQ failed: "+p.text)
-            time.sleep(1)
-
-        # download
-        out = self.session.get(f"{pq_url}/{report_id}/download",
-                               verify=self.verify_ssl,
-                               timeout=self.dv_timeout)
-        out.raise_for_status()
-        events = out.json()
-        LOG.debug("fetch_deepvis returning %d events for threat %s", len(events), threat.get("id", "unknown"))
-        return events
+        if status not in ("FINISHED", "SUCCEEDED", 100):
+            params = {"queryId": query_id}
+            poll_count = 0
+            while True:
+                poll_count += 1
+                LOG.debug("Polling PQ status (attempt %d) for queryId=%s", poll_count, query_id)
+                ping = self.session.get(ping_url,
+                                        params=params,
+                                        verify=self.verify_ssl,
+                                        timeout=self.dv_timeout)
+                LOG.debug("PQ PING status: %s", ping.status_code)
+                ping.raise_for_status()
+                ping_json = ping.json()
+                LOG.debug("PQ PING response: %s", ping_json)
+                pd = ping_json.get("data", {})
+                status = pd.get("status") or pd.get("progress")
+                LOG.debug("PQ PING status value: %s", status)
+                if status in ("FINISHED", "SUCCEEDED", 100):
+                    pq_data = pd
+                    LOG.debug("PQ finished for queryId=%s", query_id)
+                    break
+                if str(status).startswith("FAILED"):
+                    LOG.error("Power-Query %s FAILED: %s", query_id, ping.text)
+                    raise RuntimeError(f"Power-Query {query_id} FAILED: {ping.text}")
+                time.sleep(5)
+        data = pq_data.get("data", [])
+        LOG.info("PQ FINAL data count=%d", len(data))
+        if data:
+            LOG.debug("PQ FINAL data sample: %s", data[0] if isinstance(data, list) and len(data) > 0 else data)
+        return data
 
     def _build_query_core(self, threat: Dict[str,Any]) -> str:
         ti     = threat.get("threatInfo", {}) or {}
